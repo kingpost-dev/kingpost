@@ -4,6 +4,7 @@ import { initCommand } from "./commands/init.js";
 import { joinCommand } from "./commands/join.js";
 import { hookCommand } from "./commands/hook.js";
 import { mcpCommand } from "./commands/mcp.js";
+import { doctorCommand } from "./commands/doctor.js";
 import { HarnessSchema } from "@kingpost/protocol";
 
 const program = new Command();
@@ -33,6 +34,10 @@ program
 
 program.command("mcp").action(async () => {
   await mcpCommand();
+});
+
+program.command("doctor").action(async () => {
+  await doctorCommand();
 });
 
 program.parseAsync(process.argv);
