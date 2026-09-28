@@ -43,7 +43,7 @@ program.command("doctor").action(async () => {
 
 program
   .command("inbox")
-  .option("--watch", "keep polling for new questions")
+  .option("--watch", "keep polling for new questions (currently always on — the flag is accepted for interface familiarity, there's no one-shot mode)")
   .requiredOption("--name <name>", "your name, used as the answer author")
   .action(async (opts) => {
     await inboxCommand({ userName: opts.name });
