@@ -14,7 +14,7 @@ const CODEX_PRE_TOOL_USE = JSON.stringify({
   hook_event_name: "PreToolUse",
   permission_mode: "default",
   tool_name: "apply_patch",
-  tool_input: { file_path: "contracts/api.ts" },
+  tool_input: { command: "*** Begin Patch\n*** Update File: contracts/api.ts\n@@\n-old\n+new\n*** End Patch" },
 });
 
 const CLAUDE_POST_TOOL_USE = JSON.stringify({
@@ -77,15 +77,47 @@ describe("parseHookInput path normalization", () => {
     expect(parsed.filePath).toBe("contracts/api.ts");
   });
 
-  it("leaves an already-relative Codex-style file_path untouched", () => {
+  it("leaves an already-relative Codex-style apply_patch file path untouched", () => {
     const payload = JSON.stringify({
       cwd: "/repo",
       hook_event_name: "PostToolUse",
       tool_name: "apply_patch",
-      tool_input: { file_path: "contracts/api.ts" },
+      tool_input: { command: "*** Begin Patch\n*** Update File: contracts/api.ts\n@@\n-old\n+new\n*** End Patch" },
     });
     const parsed = parseHookInput("codex", payload);
     expect(parsed.filePath).toBe("contracts/api.ts");
+  });
+});
+
+describe("parseHookInput apply_patch path extraction", () => {
+  it("extracts the path from an Update File patch", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PostToolUse",
+      tool_name: "apply_patch",
+      tool_input: { command: "*** Begin Patch\n*** Update File: contracts/api.ts\n@@\n-old\n+new\n*** End Patch" },
+    });
+    expect(parseHookInput("codex", payload).filePath).toBe("contracts/api.ts");
+  });
+
+  it("extracts the path from an Add File patch", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PostToolUse",
+      tool_name: "apply_patch",
+      tool_input: { command: "*** Begin Patch\n*** Add File: contracts/new.ts\n+content\n*** End Patch" },
+    });
+    expect(parseHookInput("codex", payload).filePath).toBe("contracts/new.ts");
+  });
+
+  it("leaves filePath undefined for a generic Bash command (no reliable single-file signal)", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "sed -n '1,4p' contracts/api.ts" },
+    });
+    expect(parseHookInput("claude", payload).filePath).toBeUndefined();
   });
 });
 
