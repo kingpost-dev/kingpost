@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
+import { join } from "node:path";
 import { readProjectConfig, writeProjectConfig, getToken, type ProjectConfig } from "../config.js";
 import { ApiClient } from "../api.js";
 import { renderBrief, deltaIsEmpty, claimsOverlap, type Harness, type Delta } from "@kingpost/protocol";
@@ -110,7 +111,7 @@ export async function handlePostToolUse(input: HookInput): Promise<string> {
   writeProjectConfig(input.cwd, { ...ctx.config, claims });
 
   if (isContractPath(input.filePath)) {
-    const fullPath = `${input.cwd}/${input.filePath}`;
+    const fullPath = join(input.cwd, input.filePath);
     const content = readFileSync(fullPath, "utf8");
     const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? "unknown";
     await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName });

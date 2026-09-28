@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseHookInput, renderHookOutput } from "./parse.js";
+import * as path from "node:path";
+import { parseHookInput, renderHookOutput, toProjectRelative } from "./parse.js";
 
 const CLAUDE_SESSION_START = JSON.stringify({
   session_id: "sess_1",
@@ -118,6 +119,35 @@ describe("parseHookInput apply_patch path extraction", () => {
       tool_input: { command: "sed -n '1,4p' contracts/api.ts" },
     });
     expect(parseHookInput("claude", payload).filePath).toBeUndefined();
+  });
+});
+
+describe("toProjectRelative cross-platform (path.win32 injected for determinism)", () => {
+  // node:path's default export is platform-native — on this test suite's actual OS (whatever
+  // it is), `path.win32` and `path.posix` are always available and behave deterministically
+  // regardless of the host OS. Injecting them lets us prove the Windows code path works
+  // correctly even when these tests run on macOS/Linux CI.
+  it("converts a Windows-style absolute path under cwd to a forward-slash-normalized relative path", () => {
+    const result = toProjectRelative("C:\\Users\\sam\\repo", "C:\\Users\\sam\\repo\\contracts\\api.ts", path.win32);
+    expect(result).toBe("contracts/api.ts");
+  });
+
+  it("produces the same logical relative path on win32 and posix for equivalent inputs", () => {
+    const winResult = toProjectRelative("C:\\Users\\sam\\repo", "C:\\Users\\sam\\repo\\server\\auth\\login.ts", path.win32);
+    const posixResult = toProjectRelative("/Users/sam/repo", "/Users/sam/repo/server/auth/login.ts", path.posix);
+    expect(winResult).toBe("server/auth/login.ts");
+    expect(winResult).toBe(posixResult);
+  });
+
+  it("leaves a Windows-style absolute path outside cwd unchanged", () => {
+    const outside = "C:\\Other\\place\\file.ts";
+    const result = toProjectRelative("C:\\Users\\sam\\repo", outside, path.win32);
+    expect(result).toBe(outside);
+  });
+
+  it("leaves an already-relative path unchanged under win32 semantics too", () => {
+    const result = toProjectRelative("C:\\Users\\sam\\repo", "contracts/api.ts", path.win32);
+    expect(result).toBe("contracts/api.ts");
   });
 });
 

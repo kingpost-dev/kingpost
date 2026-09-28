@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as path from "node:path";
 import type { Harness } from "@kingpost/protocol";
 
 const HookEventNameSchema = z.enum(["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"]);
@@ -11,11 +12,30 @@ export interface HookInput {
   filePath?: string;
 }
 
-function toProjectRelative(cwd: string, filePath: string | undefined): string | undefined {
+// The pieces of node:path we need, narrowed so tests can inject `path.win32`/`path.posix`
+// to deterministically exercise both platforms' semantics regardless of which OS the test
+// suite itself runs on. Production code relies on the default (the platform-native `path`
+// module), so on a real Windows machine this automatically gets win32 behavior for free.
+type PathModule = Pick<typeof path, "isAbsolute" | "relative" | "sep">;
+
+// Exported for tests only (see parse.test.ts's "Windows path" cases) — not part of the
+// module's public API surface otherwise.
+export function toProjectRelative(
+  cwd: string,
+  filePath: string | undefined,
+  pathMod: PathModule = path
+): string | undefined {
   if (!filePath) return undefined;
-  if (!filePath.startsWith("/")) return filePath; // already relative (e.g. Codex's apply_patch)
-  const normalizedCwd = cwd.endsWith("/") ? cwd : cwd + "/";
-  return filePath.startsWith(normalizedCwd) ? filePath.slice(normalizedCwd.length) : filePath;
+  if (!pathMod.isAbsolute(filePath)) return filePath; // already relative (e.g. Codex's apply_patch)
+  const rel = pathMod.relative(cwd, filePath);
+  // If filePath isn't actually under cwd, `relative` produces a path starting with "..".
+  // Keep the original absolute path in that case (matches existing "leave it absolute,
+  // isContractPath/claimsOverlap simply won't match it" behavior for out-of-project edits).
+  if (rel.startsWith("..")) return filePath;
+  // Downstream logic (isContractPath, claimsOverlap) works on LOGICAL project-relative
+  // paths, not OS file paths — normalize to forward slashes regardless of platform so a
+  // Windows agent's `server\auth\login.ts` compares equal to a Mac agent's `server/auth/login.ts`.
+  return pathMod.sep === "/" ? rel : rel.split(pathMod.sep).join("/");
 }
 
 // Codex's apply_patch tool_input has no structured file_path field — the path is embedded in

@@ -98,4 +98,20 @@ describe("handlePostToolUse — contract path", () => {
 
     expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/api.ts", content: "export type X = 1;" }));
   });
+
+  // Regression guard for the `${cwd}/${filePath}` manual-concatenation bug: a nested,
+  // multi-segment contract path only resolves correctly if the file path is built with
+  // node:path's `join` (platform-aware) rather than naive string templating.
+  it("publishes the file's content for a nested contract path", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-contract-nested-"));
+    mkdirSync(join(cwd, "contracts", "v1"), { recursive: true });
+    writeFileSync(join(cwd, "contracts", "v1", "api.ts"), "export type Y = 2;");
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, changed: true });
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/v1/api.ts" });
+
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/v1/api.ts", content: "export type Y = 2;" }));
+  });
 });
