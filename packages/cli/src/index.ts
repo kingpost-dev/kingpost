@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
 import { joinCommand } from "./commands/join.js";
 import { hookCommand } from "./commands/hook.js";
+import { mcpCommand } from "./commands/mcp.js";
 import { HarnessSchema } from "@kingpost/protocol";
 
 const program = new Command();
@@ -29,5 +30,9 @@ program
   .action(async (_event, opts) => {
     await hookCommand(HarnessSchema.parse(opts.harness));
   });
+
+program.command("mcp").action(async () => {
+  await mcpCommand();
+});
 
 program.parseAsync(process.argv);
