@@ -27,6 +27,7 @@ describe("kingpost_who", () => {
     // The installed @modelcontextprotocol/sdk (1.30.1) stores a registered tool's callback under
     // `handler` (not `callback`) on the object in `_registeredTools` — confirmed by reading
     // node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js `_createRegisteredTool`.
+    // NOTE: relies on @modelcontextprotocol/sdk@1.30.1 internals (._registeredTools[name].handler); may need updating on SDK upgrade — inspect the real object if this breaks.
     const tool = (server as any)._registeredTools?.["kingpost_who"];
     if (!tool) throw new Error("Could not find kingpost_who's registered callback on the McpServer instance — inspect the actual SDK's internals and adjust this test.");
     const result = await tool.handler({}, {});
@@ -36,6 +37,7 @@ describe("kingpost_who", () => {
   it("returns a readable error instead of throwing when unregistered", async () => {
     const emptyCwd = mkdtempSync(join(tmpdir(), "kp-mcp-empty-"));
     const server = buildMcpServer(emptyCwd);
+    // NOTE: relies on @modelcontextprotocol/sdk@1.30.1 internals (._registeredTools[name].handler); may need updating on SDK upgrade — inspect the real object if this breaks.
     const tool = (server as any)._registeredTools?.["kingpost_who"];
     const result = await tool.handler({}, {});
     expect(result.isError).toBe(true);
