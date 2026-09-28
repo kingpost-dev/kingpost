@@ -2,6 +2,8 @@
 import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
 import { joinCommand } from "./commands/join.js";
+import { hookCommand } from "./commands/hook.js";
+import { HarnessSchema } from "@kingpost/protocol";
 
 const program = new Command();
 program.name("kingpost").version("0.1.0");
@@ -19,6 +21,13 @@ program
   .requiredOption("--name <name>", "your name")
   .action(async (link, opts) => {
     await joinCommand(link, { name: opts.name });
+  });
+
+program
+  .command("hook <event>")
+  .requiredOption("--harness <harness>", "claude or codex")
+  .action(async (_event, opts) => {
+    await hookCommand(HarnessSchema.parse(opts.harness));
   });
 
 program.parseAsync(process.argv);

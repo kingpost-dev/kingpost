@@ -7,6 +7,10 @@ export const DEFAULT_SERVER_URL = "https://app.kingpost.dev";
 export interface ProjectConfig {
   serverUrl: string;
   projectId: string;
+  agentId?: string;
+  claims?: string[];
+  lastKnownChangedContractPaths?: string[];
+  lastKnownOverlappingClaimPaths?: string[];
 }
 
 export interface Credentials {
