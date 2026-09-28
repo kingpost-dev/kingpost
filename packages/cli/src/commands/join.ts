@@ -37,11 +37,12 @@ export async function joinCommand(link: string, opts: { name: string; cwd?: stri
   if (hasClaude) {
     console.log(`\nClaude Code found. Install the plugin with:`);
     console.log(`  claude plugin marketplace add kingpost-dev/kingpost`);
-    console.log(`  claude plugin install kingpost@kingpost-dev/kingpost --scope project`);
+    console.log(`  claude plugin install kingpost@kingpost --scope project`);
   }
   if (hasCodex) {
     console.log(`\nCodex found. Install the plugin with:`);
     console.log(`  codex plugin marketplace add kingpost-dev/kingpost`);
+    console.log(`  codex plugin add kingpost@kingpost`);
     console.log(`  (then run /hooks in a Codex session to trust the kingpost hooks)`);
   }
   if (!hasClaude && !hasCodex) {
