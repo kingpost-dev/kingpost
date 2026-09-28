@@ -1,10 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProjectConfig, writeCredential, readProjectConfig } from "../config.js";
 import { handleSessionStart, handlePreToolUse, handlePostToolUse } from "./handlers.js";
 import * as apiModule from "../api.js";
+
+// node:fs's own exports aren't configurable, so `vi.spyOn(fs, "readFileSync")` throws
+// ("Cannot redefine property"). Mocking the module (spreading the real implementation, only
+// wrapping readFileSync in a vi.fn that still delegates to it) lets us record calls without
+// changing behavior for this file's other tests (readProjectConfig, etc. still work normally).
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+});
 
 describe("handleSessionStart", () => {
   let cwd: string;
@@ -113,5 +122,25 @@ describe("handlePostToolUse — contract path", () => {
     await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/v1/api.ts" });
 
     expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/v1/api.ts", content: "export type Y = 2;" }));
+  });
+
+  it("builds the file path with path.join, not manual string concatenation (regression guard)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-nested-"));
+    mkdirSync(join(cwd, "contracts/v1"), { recursive: true });
+    writeFileSync(join(cwd, "contracts/v1/api.ts"), "export type X = 1;");
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, changed: true });
+    const readSpy = vi.mocked(readFileSync);
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/v1/api.ts" });
+
+    // path.join(cwd, filePath) — this is what would differ from `${cwd}/${filePath}` if cwd or
+    // filePath ever had a trailing/leading separator (e.g. on Windows with backslash paths).
+    // Asserting the exact resolved path, not just that the call succeeded, is what makes this a
+    // real regression guard rather than a smoke test that happens to pass either way on POSIX
+    // with separator-free inputs.
+    expect(readSpy).toHaveBeenCalledWith(join(cwd, "contracts/v1/api.ts"), "utf8");
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/v1/api.ts" }));
   });
 });
