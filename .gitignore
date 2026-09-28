@@ -4,3 +4,4 @@ node_modules/
 docs/superpowers/
 .DS_Store
 dist/
+.playwright-mcp/
