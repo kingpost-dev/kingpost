@@ -23,10 +23,13 @@ describe("project config", () => {
     expect(readProjectConfig(dir)).toBeNull();
   });
 
-  it("returns null when .kingpost.json contains invalid JSON", () => {
+  it("returns null and warns when .kingpost.json contains invalid JSON", () => {
     const dir = mkdtempSync(join(tmpdir(), "kp-"));
     writeFileSync(join(dir, ".kingpost.json"), "{ not valid json");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(readProjectConfig(dir)).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("invalid JSON"));
+    errorSpy.mockRestore();
   });
 });
 
@@ -84,11 +87,14 @@ describe("credentials", () => {
     expect(getToken("nonexistent")).toBeNull();
   });
 
-  it("returns empty object when credentials.json contains invalid JSON", () => {
+  it("returns empty object and warns when credentials.json contains invalid JSON", () => {
     const home = useTempHome();
     const dir = join(home, ".config", "kingpost");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "credentials.json"), "{ not valid json");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(readCredentials()).toEqual({});
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("invalid JSON"));
+    errorSpy.mockRestore();
   });
 });

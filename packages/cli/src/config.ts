@@ -26,7 +26,8 @@ export function readProjectConfig(cwd: string): ProjectConfig | null {
   if (!existsSync(p)) return null;
   try {
     return JSON.parse(readFileSync(p, "utf8"));
-  } catch {
+  } catch (e) {
+    console.error(`kingpost: ${p} contains invalid JSON, treating as absent (${e instanceof Error ? e.message : e})`);
     return null;
   }
 }
@@ -48,7 +49,8 @@ export function readCredentials(): Credentials {
   if (!existsSync(p)) return {};
   try {
     return JSON.parse(readFileSync(p, "utf8"));
-  } catch {
+  } catch (e) {
+    console.error(`kingpost: ${p} contains invalid JSON, treating as absent (${e instanceof Error ? e.message : e})`);
     return {};
   }
 }
