@@ -1,4 +1,5 @@
-import { DEFAULT_SERVER_URL, readProjectConfig, writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
+import { existsSync } from "node:fs";
+import { DEFAULT_SERVER_URL, projectConfigPath, readProjectConfig, writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
 import { createProject } from "../api.js";
 
 const AGENTS_MD_BLOCK = `## Kingpost
@@ -8,9 +9,13 @@ export async function initCommand(name: string, opts: { serverUrl?: string; cwd?
   const serverUrl = opts.serverUrl ?? DEFAULT_SERVER_URL;
   const cwd = opts.cwd ?? process.cwd();
 
-  const existing = readProjectConfig(cwd);
-  if (existing) {
-    console.error(`This directory is already initialized (project ${existing.projectId} on ${existing.serverUrl}). Remove .kingpost.json first if you really want to create a new project.`);
+  if (existsSync(projectConfigPath(cwd))) {
+    const existing = readProjectConfig(cwd);
+    if (existing) {
+      console.error(`This directory is already initialized (project ${existing.projectId} on ${existing.serverUrl}). Remove .kingpost.json first if you really want to create a new project.`);
+    } else {
+      console.error(`.kingpost.json exists but is corrupted and could not be parsed. Fix or remove it before running 'kingpost init' again — do not proceed without checking whether it holds a real project link.`);
+    }
     process.exitCode = 1;
     return;
   }

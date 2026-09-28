@@ -11,6 +11,10 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 describe("project config", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("round-trips through .kingpost.json", () => {
     const dir = mkdtempSync(join(tmpdir(), "kp-"));
     writeProjectConfig(dir, { serverUrl: "https://app.kingpost.dev", projectId: "proj_abc" });
