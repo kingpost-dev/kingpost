@@ -5,8 +5,10 @@ function parseInviteLink(link: string): { serverUrl: string; projectId: string; 
   const url = new URL(link);
   const token = url.hash.replace(/^#/, "");
   const parts = url.pathname.split("/").filter(Boolean);
+  if (parts[0] !== "join" || !parts[1] || !token) {
+    throw new Error(`Not a valid kingpost invite link: ${link}`);
+  }
   const projectId = parts[1];
-  if (!token || !projectId) throw new Error(`Not a valid kingpost invite link: ${link}`);
   return { serverUrl: `${url.protocol}//${url.host}`, projectId, token };
 }
 

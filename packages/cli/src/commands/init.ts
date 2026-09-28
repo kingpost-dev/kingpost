@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER_URL, writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
+import { DEFAULT_SERVER_URL, readProjectConfig, writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
 import { createProject } from "../api.js";
 
 const AGENTS_MD_BLOCK = `## Kingpost
@@ -7,6 +7,13 @@ This project uses Kingpost to coordinate agents. Before editing files under \`co
 export async function initCommand(name: string, opts: { serverUrl?: string; cwd?: string }) {
   const serverUrl = opts.serverUrl ?? DEFAULT_SERVER_URL;
   const cwd = opts.cwd ?? process.cwd();
+
+  const existing = readProjectConfig(cwd);
+  if (existing) {
+    console.error(`This directory is already initialized (project ${existing.projectId} on ${existing.serverUrl}). Remove .kingpost.json first if you really want to create a new project.`);
+    process.exitCode = 1;
+    return;
+  }
 
   const { projectId, token } = await createProject(serverUrl, name);
 

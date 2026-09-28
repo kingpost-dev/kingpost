@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
+import * as os from "node:os";
 import { join } from "node:path";
 
 export const DEFAULT_SERVER_URL = "https://app.kingpost.dev";
@@ -28,7 +28,7 @@ export function writeProjectConfig(cwd: string, config: ProjectConfig): void {
 }
 
 function credentialsDir(): string {
-  return join(homedir(), ".config", "kingpost");
+  return join(os.homedir(), ".config", "kingpost");
 }
 
 function credentialsPath(): string {
@@ -46,7 +46,7 @@ export function writeCredential(projectId: string, token: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const creds = readCredentials();
   creds[projectId] = { token };
-  writeFileSync(credentialsPath(), JSON.stringify(creds, null, 2) + "\n");
+  writeFileSync(credentialsPath(), JSON.stringify(creds, null, 2) + "\n", { mode: 0o600 });
 }
 
 export function getToken(projectId: string): string | null {
