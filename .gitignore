@@ -1,0 +1,6 @@
+node_modules/
+.claude/
+.idea/
+docs/superpowers/
+.DS_Store
+dist/
