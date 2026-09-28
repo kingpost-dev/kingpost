@@ -17,20 +17,51 @@ const CODEX_PRE_TOOL_USE = JSON.stringify({
   tool_input: { file_path: "contracts/api.ts" },
 });
 
+const CLAUDE_POST_TOOL_USE = JSON.stringify({
+  session_id: "sess_3",
+  cwd: "/repo",
+  hook_event_name: "PostToolUse",
+  permission_mode: "default",
+  tool_name: "Write",
+  tool_input: { file_path: "contracts/api.ts" },
+});
+
 describe("parseHookInput", () => {
   it("parses a Claude Code SessionStart payload", () => {
     const parsed = parseHookInput("claude", CLAUDE_SESSION_START);
-    expect(parsed).toMatchObject({ harness: "claude", hookEventName: "SessionStart", cwd: "/repo" });
+    expect(parsed).toEqual({
+      harness: "claude",
+      hookEventName: "SessionStart",
+      cwd: "/repo",
+      toolName: undefined,
+      filePath: undefined,
+    });
   });
 
   it("parses a Codex PreToolUse payload including the file path", () => {
     const parsed = parseHookInput("codex", CODEX_PRE_TOOL_USE);
-    expect(parsed).toMatchObject({
+    expect(parsed).toEqual({
       harness: "codex",
       hookEventName: "PreToolUse",
+      cwd: "/repo",
       toolName: "apply_patch",
       filePath: "contracts/api.ts",
     });
+  });
+
+  it("parses a Claude Code PostToolUse payload including the file path", () => {
+    const parsed = parseHookInput("claude", CLAUDE_POST_TOOL_USE);
+    expect(parsed).toEqual({
+      harness: "claude",
+      hookEventName: "PostToolUse",
+      cwd: "/repo",
+      toolName: "Write",
+      filePath: "contracts/api.ts",
+    });
+  });
+
+  it("throws on an unrecognized hook_event_name", () => {
+    expect(() => parseHookInput("claude", JSON.stringify({ cwd: "/repo", hook_event_name: "SomeFutureEvent" }))).toThrow();
   });
 });
 
