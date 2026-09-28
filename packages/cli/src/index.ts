@@ -5,6 +5,7 @@ import { joinCommand } from "./commands/join.js";
 import { hookCommand } from "./commands/hook.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { doctorCommand } from "./commands/doctor.js";
+import { inboxCommand } from "./commands/inbox.js";
 import { HarnessSchema } from "@kingpost/protocol";
 
 const program = new Command();
@@ -39,5 +40,13 @@ program.command("mcp").action(async () => {
 program.command("doctor").action(async () => {
   await doctorCommand();
 });
+
+program
+  .command("inbox")
+  .option("--watch", "keep polling for new questions")
+  .requiredOption("--name <name>", "your name, used as the answer author")
+  .action(async (opts) => {
+    await inboxCommand({ userName: opts.name });
+  });
 
 program.parseAsync(process.argv);
