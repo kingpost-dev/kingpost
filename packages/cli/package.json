@@ -10,7 +10,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@kingpost/protocol": "*",
+    "@kingpost/protocol": "^0.1.0",
     "commander": "^12.1.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "zod": "^3.23.8"
