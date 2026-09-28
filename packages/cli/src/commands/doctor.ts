@@ -47,6 +47,10 @@ function checkCodexPlugin(): Check {
 // which writes a `[mcp_servers.kingpost]` table into ~/.codex/config.toml. This is a separate,
 // explicit step (documented in `join`'s Codex instructions); check for it directly rather than
 // assuming plugin install implies MCP registration.
+//
+// Substring-matches the exact format `codex mcp add` writes today (confirmed empirically).
+// Not a general TOML-equivalence check — a hand-edited config.toml with different
+// spacing/casing could false-negative here. Good enough for the tool's own generated output.
 function checkCodexMcp(): Check {
   const detail = "run 'codex mcp add kingpost -- kingpost mcp'";
   const configPath = join(homedir(), ".codex", "config.toml");

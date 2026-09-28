@@ -22,6 +22,12 @@ function toProjectRelative(cwd: string, filePath: string | undefined): string | 
 // the patch text itself (e.g. "*** Update File: contracts/api.ts"). A generic Bash command has
 // no reliable single-file signal (e.g. `sed -i` could touch anything) and is intentionally left
 // unextracted.
+//
+// Known limitation: only extracts the FIRST file from a multi-file apply_patch call
+// (Codex's *** Begin Patch envelope can contain several *** Update/Add File: sections).
+// A single apply_patch editing 2+ contract files will only publish/detect the first —
+// accepted for the MVP; fixing this means HookInput.filePath becoming string[] and
+// handlers.ts looping over it, which is real scope beyond this fix.
 function extractApplyPatchFilePath(command: string): string | undefined {
   const match = command.match(/\*\*\* (?:Update|Add) File: (.+)/);
   return match ? match[1].trim() : undefined;
