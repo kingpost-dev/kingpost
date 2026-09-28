@@ -1,0 +1,6 @@
+{
+  "name": "kingpost",
+  "plugins": [
+    { "name": "kingpost", "source": "./plugins/codex" }
+  ]
+}

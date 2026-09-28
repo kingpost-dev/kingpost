@@ -1,0 +1,5 @@
+{
+  "mcp_servers": {
+    "kingpost": { "command": "kingpost", "args": ["mcp"] }
+  }
+}

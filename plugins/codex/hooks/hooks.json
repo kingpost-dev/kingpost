@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume", "hooks": [{ "type": "command", "command": "kingpost hook SessionStart --harness codex", "additionalContextLimit": 5000 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "kingpost hook UserPromptSubmit --harness codex", "additionalContextLimit": 5000 }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "apply_patch|Edit|Write", "hooks": [{ "type": "command", "command": "kingpost hook PreToolUse --harness codex", "additionalContextLimit": 5000 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "apply_patch|Edit|Write", "hooks": [{ "type": "command", "command": "kingpost hook PostToolUse --harness codex", "additionalContextLimit": 5000 }] }
+    ]
+  }
+}

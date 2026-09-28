@@ -1,0 +1,6 @@
+{
+  "name": "kingpost",
+  "version": "0.1.0",
+  "description": "Coordination layer for teams of coding agents — presence, contract broadcast, ask/answer, findings.",
+  "extensions": { "com.openai": {} }
+}

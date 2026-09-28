@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume", "hooks": [{ "type": "command", "command": "kingpost hook SessionStart --harness claude" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "kingpost hook UserPromptSubmit --harness claude" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Write|Edit", "hooks": [{ "type": "command", "command": "kingpost hook PreToolUse --harness claude" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Write|Edit", "hooks": [{ "type": "command", "command": "kingpost hook PostToolUse --harness claude" }] }
+    ]
+  }
+}

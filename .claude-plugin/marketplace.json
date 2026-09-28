@@ -1,0 +1,7 @@
+{
+  "name": "kingpost",
+  "owner": { "name": "Kingpost" },
+  "plugins": [
+    { "name": "kingpost", "source": "./plugins/claude-code" }
+  ]
+}
