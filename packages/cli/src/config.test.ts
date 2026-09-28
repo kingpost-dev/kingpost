@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import * as os from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +20,12 @@ describe("project config", () => {
 
   it("returns null when no config exists", () => {
     const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    expect(readProjectConfig(dir)).toBeNull();
+  });
+
+  it("returns null when .kingpost.json contains invalid JSON", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    writeFileSync(join(dir, ".kingpost.json"), "{ not valid json");
     expect(readProjectConfig(dir)).toBeNull();
   });
 });
@@ -76,5 +82,13 @@ describe("credentials", () => {
   it("returns null for a project with no stored token", () => {
     useTempHome();
     expect(getToken("nonexistent")).toBeNull();
+  });
+
+  it("returns empty object when credentials.json contains invalid JSON", () => {
+    const home = useTempHome();
+    const dir = join(home, ".config", "kingpost");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "credentials.json"), "{ not valid json");
+    expect(readCredentials()).toEqual({});
   });
 });

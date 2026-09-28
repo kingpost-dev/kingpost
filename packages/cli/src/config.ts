@@ -24,7 +24,11 @@ export function projectConfigPath(cwd: string): string {
 export function readProjectConfig(cwd: string): ProjectConfig | null {
   const p = projectConfigPath(cwd);
   if (!existsSync(p)) return null;
-  return JSON.parse(readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 export function writeProjectConfig(cwd: string, config: ProjectConfig): void {
@@ -42,7 +46,11 @@ function credentialsPath(): string {
 export function readCredentials(): Credentials {
   const p = credentialsPath();
   if (!existsSync(p)) return {};
-  return JSON.parse(readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return {};
+  }
 }
 
 export function writeCredential(projectId: string, token: string): void {
