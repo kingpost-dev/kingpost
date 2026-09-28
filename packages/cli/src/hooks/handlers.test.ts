@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProjectConfig, writeCredential, readProjectConfig } from "../config.js";
@@ -82,5 +82,20 @@ describe("handlePostToolUse", () => {
     expect(publishSpy).not.toHaveBeenCalled();
     const config = readProjectConfig(cwd);
     expect(config?.claims).toContain("ui/App.vue");
+  });
+});
+
+describe("handlePostToolUse — contract path", () => {
+  it("publishes the file's content when the path is under contracts/", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-contract-"));
+    mkdirSync(join(cwd, "contracts"), { recursive: true });
+    writeFileSync(join(cwd, "contracts/api.ts"), "export type X = 1;");
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, changed: true });
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/api.ts" });
+
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/api.ts", content: "export type X = 1;" }));
   });
 });

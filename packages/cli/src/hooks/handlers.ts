@@ -117,7 +117,7 @@ export async function handlePostToolUse(input: HookInput): Promise<string> {
   writeProjectConfig(input.cwd, { ...ctx.config, claims });
 
   if (isContractPath(input.filePath)) {
-    const fullPath = input.filePath.startsWith("/") ? input.filePath : `${input.cwd}/${input.filePath}`;
+    const fullPath = `${input.cwd}/${input.filePath}`;
     const content = readFileSync(fullPath, "utf8");
     const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? "unknown";
     await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName });

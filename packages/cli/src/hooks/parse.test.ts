@@ -65,6 +65,30 @@ describe("parseHookInput", () => {
   });
 });
 
+describe("parseHookInput path normalization", () => {
+  it("converts an absolute Claude Code file_path under cwd to a project-relative path", () => {
+    const payload = JSON.stringify({
+      cwd: "/Users/jack/repo",
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/Users/jack/repo/contracts/api.ts" },
+    });
+    const parsed = parseHookInput("claude", payload);
+    expect(parsed.filePath).toBe("contracts/api.ts");
+  });
+
+  it("leaves an already-relative Codex-style file_path untouched", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PostToolUse",
+      tool_name: "apply_patch",
+      tool_input: { file_path: "contracts/api.ts" },
+    });
+    const parsed = parseHookInput("codex", payload);
+    expect(parsed.filePath).toBe("contracts/api.ts");
+  });
+});
+
 describe("renderHookOutput", () => {
   it("wraps additionalContext in hookSpecificOutput for either harness", () => {
     const out = JSON.parse(renderHookOutput("SessionStart", "hello"));
