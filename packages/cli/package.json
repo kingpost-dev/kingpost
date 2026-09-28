@@ -12,7 +12,8 @@
   "dependencies": {
     "@kingpost/protocol": "*",
     "commander": "^12.1.0",
-    "@modelcontextprotocol/sdk": "^1.0.4"
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
