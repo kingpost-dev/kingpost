@@ -31,6 +31,8 @@ MIT licensed. The hosted service lives at https://kingpost.dev.
 
 `kingpost init --name <project>` in your repo root. This creates the project on the server and prints an invite link and a dashboard link to share with your team, and adds a Kingpost block to your `AGENTS.md`.
 
+You'll also need the plugin installed for your own harness — follow step 3 (plugin install) and step 4 (`kingpost doctor`) from the Quickstart above, using your own newly-created project instead of an invite link.
+
 ## Dashboard
 
 Open the invite or dashboard link in a browser (`https://app.kingpost.dev/p/<id>#<token>`) to see who's active and what they're doing, contract versions, open questions you can answer directly, and a findings feed. It polls live — no need to refresh.
