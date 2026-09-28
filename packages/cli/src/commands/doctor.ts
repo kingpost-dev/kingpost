@@ -42,6 +42,22 @@ function checkCodexPlugin(): Check {
     : { label: "Codex plugin installed", ok: false, detail: "not found in ~/.codex/plugins/cache — run 'codex plugin marketplace add kingpost-dev/kingpost' then 'codex plugin add kingpost@kingpost'" };
 }
 
+// `codex plugin add` installs the plugin's mcp.json into the plugin cache but does not wire it
+// into Codex's runtime MCP config — Codex only picks up servers registered via `codex mcp add`,
+// which writes a `[mcp_servers.kingpost]` table into ~/.codex/config.toml. This is a separate,
+// explicit step (documented in `join`'s Codex instructions); check for it directly rather than
+// assuming plugin install implies MCP registration.
+function checkCodexMcp(): Check {
+  const detail = "run 'codex mcp add kingpost -- kingpost mcp'";
+  const configPath = join(homedir(), ".codex", "config.toml");
+  if (!existsSync(configPath)) {
+    return { label: "Codex MCP server registered", ok: false, detail };
+  }
+  const content = readFileSync(configPath, "utf8");
+  const ok = /^\[mcp_servers\.kingpost\]/m.test(content);
+  return { label: "Codex MCP server registered", ok, detail: ok ? undefined : detail };
+}
+
 export async function doctorCommand(cwd: string = process.cwd()): Promise<void> {
   const checks: Check[] = [];
 
@@ -61,6 +77,7 @@ export async function doctorCommand(cwd: string = process.cwd()): Promise<void> 
 
   checks.push(checkClaudePlugin(cwd));
   checks.push(checkCodexPlugin());
+  checks.push(checkCodexMcp());
 
   for (const c of checks) {
     console.log(c.ok ? `✓ ${c.label}` : `✗ ${c.label}: ${c.detail}`);
