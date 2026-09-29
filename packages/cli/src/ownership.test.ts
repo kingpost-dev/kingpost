@@ -114,4 +114,14 @@ describe("routeQuestionTarget", () => {
   it("matches case-insensitively", () => {
     expect(routeQuestionTarget("does CONTRACTS/API.TS support pagination?", contracts, [owner, asker], "agent_asker")).toBe("agent_owner");
   });
+
+  it("strips a .d.ts extension fully (not just its trailing .ts) when matching by basename", () => {
+    const dts = [contract({ path: "contracts/types.d.ts", ownerUserName: "alex" })];
+    expect(routeQuestionTarget("does the types shape look right?", dts, [owner, asker], "agent_asker")).toBe("agent_owner");
+  });
+
+  it("strips a .d.ts extension case-insensitively", () => {
+    const dts = [contract({ path: "contracts/Types.D.TS", ownerUserName: "alex" })];
+    expect(routeQuestionTarget("does the types shape look right?", dts, [owner, asker], "agent_asker")).toBe("agent_owner");
+  });
 });

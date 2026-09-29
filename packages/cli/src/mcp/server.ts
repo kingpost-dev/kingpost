@@ -71,15 +71,13 @@ export function buildMcpServer(cwd: string) {
       try {
         const { client, agentId } = ctx();
         let toAgentId: string | null = to ?? null;
-        let autoRouted = false;
         if (!toAgentId) {
-          const [{ contracts }, { agents }] = await Promise.all([client.listContracts(), client.listAgents()]);
+          const [{ agents }, { contracts }] = await Promise.all([client.listAgents(), client.listContracts()]);
           toAgentId = routeQuestionTarget(question, contracts, agents, agentId);
-          autoRouted = toAgentId !== null;
         }
         const { question: created } = await client.askQuestion({ fromAgentId: agentId, toAgentId, text: question });
         const suffix = await renderDeltaSuffix(client, agentId);
-        const routedNote = autoRouted ? " (auto-routed to the mentioned contract's owner)" : "";
+        const routedNote = !to && toAgentId ? " (auto-routed to the mentioned contract's owner)" : "";
         return { content: [{ type: "text" as const, text: `Question posted: [${created.id}]${routedNote}${suffix}` }] };
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
