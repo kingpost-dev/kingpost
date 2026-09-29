@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatAgentLine } from "./ownership.js";
+import { formatAgentLine, routeQuestionTarget } from "./ownership.js";
 import type { Agent, Contract } from "@kingpost/protocol";
 
 function agent(overrides: Partial<Agent> = {}): Agent {
@@ -62,5 +62,52 @@ describe("formatAgentLine", () => {
     const codexAgent = agent({ id: "agent_codex", harness: "codex" });
     expect(formatAgentLine(claudeAgent, contracts)).toContain("(owns: contracts/api.ts)");
     expect(formatAgentLine(codexAgent, contracts)).toContain("(owns: contracts/api.ts)");
+  });
+});
+
+describe("routeQuestionTarget", () => {
+  const owner = agent({ id: "agent_owner", userName: "alex" });
+  const asker = agent({ id: "agent_asker", userName: "sam" });
+  const contracts = [contract({ path: "contracts/api.ts", ownerUserName: "alex" })];
+
+  it("routes to the owner when the full path is mentioned", () => {
+    expect(routeQuestionTarget("does contracts/api.ts support pagination?", contracts, [owner, asker], "agent_asker")).toBe("agent_owner");
+  });
+
+  it("routes to the owner when just the basename is mentioned", () => {
+    expect(routeQuestionTarget("can api handle nulls?", contracts, [owner, asker], "agent_asker")).toBe("agent_owner");
+  });
+
+  it("does not match a substring inside an unrelated word", () => {
+    expect(routeQuestionTarget("is the apiary schema done?", contracts, [owner, asker], "agent_asker")).toBeNull();
+  });
+
+  it("returns null when no contract is mentioned", () => {
+    expect(routeQuestionTarget("how's it going?", contracts, [owner, asker], "agent_asker")).toBeNull();
+  });
+
+  it("returns null when the mentioned contract has no owner", () => {
+    const unowned = [contract({ path: "contracts/api.ts", ownerUserName: null })];
+    expect(routeQuestionTarget("about contracts/api.ts", unowned, [owner, asker], "agent_asker")).toBeNull();
+  });
+
+  it("returns null when the owner has no currently-online agent", () => {
+    expect(routeQuestionTarget("about contracts/api.ts", contracts, [asker], "agent_asker")).toBeNull();
+  });
+
+  it("returns null when the only matching agent is the asker themself", () => {
+    const selfOwned = [contract({ path: "contracts/api.ts", ownerUserName: "sam" })];
+    expect(routeQuestionTarget("about contracts/api.ts", selfOwned, [asker], "agent_asker")).toBeNull();
+  });
+
+  it("prefers a full-path match over a basename match when both are present", () => {
+    const two = [
+      contract({ id: "c1", path: "contracts/api.ts", ownerUserName: "alex" }),
+      contract({ id: "c2", path: "lib/api.ts", ownerUserName: "sam" }),
+    ];
+    // Mentions the full path of c2 (owned by sam, who is the asker). A full-path match must be
+    // final and must NOT fall through to a basename search that could match c1 (owned by alex)
+    // instead — that would silently misroute a question about lib/api.ts to the wrong contract's owner.
+    expect(routeQuestionTarget("about lib/api.ts", two, [owner, asker], "agent_asker")).toBeNull();
   });
 });

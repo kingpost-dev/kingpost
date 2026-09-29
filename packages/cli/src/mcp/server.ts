@@ -6,7 +6,7 @@ import { ApiClient } from "../api.js";
 import { renderBrief } from "@kingpost/protocol";
 import { TEAMMATE_LABEL, renderDeltaLines } from "../delta-format.js";
 import { scanRepo } from "../scan/scan-repo.js";
-import { formatAgentLine } from "../ownership.js";
+import { formatAgentLine, routeQuestionTarget } from "../ownership.js";
 
 function errorResult(message: string) {
   return { content: [{ type: "text" as const, text: `kingpost error: ${message}` }], isError: true };
@@ -65,14 +65,22 @@ export function buildMcpServer(cwd: string) {
 
   server.tool(
     "kingpost_ask",
-    "Ask a question to a specific agent (by id, from kingpost_who) or the whole team (omit 'to').",
+    "Ask a question to a specific agent (by id, from kingpost_who) or the whole team (omit 'to'). If 'to' is omitted and the question mentions a registered contract by path or name, it's routed to that contract's owner instead of broadcasting.",
     { question: z.string(), to: z.string().optional() },
     async ({ question, to }) => {
       try {
         const { client, agentId } = ctx();
-        const { question: created } = await client.askQuestion({ fromAgentId: agentId, toAgentId: to ?? null, text: question });
+        let toAgentId: string | null = to ?? null;
+        let autoRouted = false;
+        if (!toAgentId) {
+          const [{ contracts }, { agents }] = await Promise.all([client.listContracts(), client.listAgents()]);
+          toAgentId = routeQuestionTarget(question, contracts, agents, agentId);
+          autoRouted = toAgentId !== null;
+        }
+        const { question: created } = await client.askQuestion({ fromAgentId: agentId, toAgentId, text: question });
         const suffix = await renderDeltaSuffix(client, agentId);
-        return { content: [{ type: "text" as const, text: `Question posted: [${created.id}]${suffix}` }] };
+        const routedNote = autoRouted ? " (auto-routed to the mentioned contract's owner)" : "";
+        return { content: [{ type: "text" as const, text: `Question posted: [${created.id}]${routedNote}${suffix}` }] };
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
       }

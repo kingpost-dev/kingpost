@@ -145,6 +145,62 @@ describe("kingpost_consume", () => {
   });
 });
 
+describe("kingpost_ask", () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "kp-mcp-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_asker" });
+    writeCredential("proj_1", "tok_1");
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      cursor: 0,
+    });
+  });
+
+  it("routes to the mentioned contract's owner when 'to' is omitted", async () => {
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "c1", path: "contracts/api.ts", format: "typescript", currentVersion: 1, ownerAgentId: "agent_owner", ownerUserName: "alex", createdAt: "" }],
+    } as any);
+    vi.spyOn(apiModule.ApiClient.prototype, "listAgents").mockResolvedValue({
+      agents: [{ id: "agent_owner", userName: "alex", harness: "claude", claims: [], statusText: "", lastSeen: "", cursor: 0, projectId: "proj_1", cwd: "/x" }],
+    } as any);
+    const askSpy = vi.spyOn(apiModule.ApiClient.prototype, "askQuestion").mockResolvedValue({ question: { id: "q1" } as any });
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_ask"];
+    if (!tool) throw new Error("Could not find kingpost_ask's registered callback on the McpServer instance.");
+    const result = await tool.handler({ question: "does contracts/api.ts support pagination?" }, {});
+    expect(askSpy).toHaveBeenCalledWith({ fromAgentId: "agent_asker", toAgentId: "agent_owner", text: "does contracts/api.ts support pagination?" });
+    expect(result.content[0].text).toContain("auto-routed");
+  });
+
+  it("broadcasts (toAgentId: null) when 'to' is omitted and no contract is mentioned", async () => {
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({ contracts: [] } as any);
+    vi.spyOn(apiModule.ApiClient.prototype, "listAgents").mockResolvedValue({ agents: [] } as any);
+    const askSpy = vi.spyOn(apiModule.ApiClient.prototype, "askQuestion").mockResolvedValue({ question: { id: "q2" } as any });
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_ask"];
+    if (!tool) throw new Error("Could not find kingpost_ask's registered callback on the McpServer instance.");
+    const result = await tool.handler({ question: "how's it going?" }, {});
+    expect(askSpy).toHaveBeenCalledWith({ fromAgentId: "agent_asker", toAgentId: null, text: "how's it going?" });
+    expect(result.content[0].text).not.toContain("auto-routed");
+  });
+
+  it("bypasses routing entirely when 'to' is explicitly passed", async () => {
+    const contractsSpy = vi.spyOn(apiModule.ApiClient.prototype, "listContracts");
+    const agentsSpy = vi.spyOn(apiModule.ApiClient.prototype, "listAgents");
+    const askSpy = vi.spyOn(apiModule.ApiClient.prototype, "askQuestion").mockResolvedValue({ question: { id: "q3" } as any });
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_ask"];
+    if (!tool) throw new Error("Could not find kingpost_ask's registered callback on the McpServer instance.");
+    const result = await tool.handler({ question: "does contracts/api.ts support pagination?", to: "agent_owner" }, {});
+    expect(contractsSpy).not.toHaveBeenCalled();
+    expect(agentsSpy).not.toHaveBeenCalled();
+    expect(askSpy).toHaveBeenCalledWith({ fromAgentId: "agent_asker", toAgentId: "agent_owner", text: "does contracts/api.ts support pagination?" });
+    expect(result.content[0].text).not.toContain("auto-routed");
+  });
+});
+
 vi.mock("../scan/scan-repo.js", () => ({ scanRepo: vi.fn() }));
 
 describe("kingpost_scan", () => {
