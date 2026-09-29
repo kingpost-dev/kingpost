@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { DEFAULT_SERVER_URL, projectConfigPath, readProjectConfig, writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
-import { createProject } from "../api.js";
+import { createProject, ApiClient } from "../api.js";
+import { scanRepo } from "../scan/scan-repo.js";
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
 import { writeResolvedPathHooks } from "./resolved-path-hooks.js";
 import { writeResolvedPathMcpConfig } from "./resolved-path-mcp.js";
@@ -27,6 +28,16 @@ export async function initCommand(name: string, opts: { serverUrl?: string; cwd?
   upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
   writeResolvedPathHooks(cwd);
   writeResolvedPathMcpConfig(cwd);
+
+  // Initial full-repo scan for derived consumer relationships. No agent is registered yet at this
+  // point, so relationships are recorded with a null agentId. scanRepo never throws, but guard
+  // anyway — a failed scan must never fail setup.
+  try {
+    const count = await scanRepo(cwd, new ApiClient(serverUrl, projectId, token), null);
+    if (count > 0) console.log(`Detected ${count} existing contract consumer relationship(s) from imports.`);
+  } catch {
+    // Never block setup on the scan.
+  }
 
   console.log(`Kingpost project "${name}" created.`);
   console.log(`Invite link:    ${serverUrl}/join/${projectId}#${token}`);

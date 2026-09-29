@@ -5,6 +5,7 @@ import { readProjectConfig, writeProjectConfig, getToken } from "../config.js";
 import { ApiClient } from "../api.js";
 import { renderBrief } from "@kingpost/protocol";
 import { TEAMMATE_LABEL, renderDeltaLines } from "../delta-format.js";
+import { scanRepo } from "../scan/scan-repo.js";
 
 function errorResult(message: string) {
   return { content: [{ type: "text" as const, text: `kingpost error: ${message}` }], isError: true };
@@ -146,6 +147,22 @@ export function buildMcpServer(cwd: string) {
         await client.declareConsumer(contractId, { path, agentId });
         const suffix = await renderDeltaSuffix(client, agentId);
         return { content: [{ type: "text" as const, text: `Registered ${path} as a consumer of [${contractId}].${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
+  server.tool(
+    "kingpost_scan",
+    "Re-scan the whole repo's relative imports and record every file that consumes a registered contract. Runs automatically on init/join and on every file write; use this to force a full re-scan.",
+    {},
+    async () => {
+      try {
+        const { client, agentId } = ctx();
+        const count = await scanRepo(cwd, client, agentId);
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return { content: [{ type: "text" as const, text: `Scan complete: ${count} contract consumer relationship(s) recorded.${suffix}` }] };
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
       }

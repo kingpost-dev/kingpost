@@ -10,10 +10,9 @@ import { detectFormat } from "../differs/detect-format.js";
 import { diffJsonSchema } from "../differs/json-schema.js";
 import { diffOpenApi } from "../differs/openapi.js";
 import { diffDrizzle } from "../differs/drizzle.js";
-import { extractRelativeImports } from "../scan/extract-imports.js";
-import { resolveContractPaths, findConsumedContracts } from "../scan/match-contracts.js";
+import { findConsumedContractIds } from "../scan/match-contracts.js";
 
-function isContractPath(path: string | undefined): boolean {
+export function isContractPath(path: string | undefined): boolean {
   return !!path && path.startsWith("contracts/");
 }
 
@@ -30,17 +29,9 @@ async function scanForConsumedContracts(
   content: string
 ): Promise<void> {
   try {
-    const specifiers = extractRelativeImports(content);
-    if (specifiers.length === 0) return;
-    const resolved = resolveContractPaths(filePath, specifiers);
-    const { contracts } = await client.listContracts();
-    const consumed = findConsumedContracts(resolved, contracts.map((c) => c.path));
-    if (consumed.length === 0) return;
-    const matchedContracts = consumed
-      .map((contractPath) => contracts.find((c) => c.path === contractPath))
-      .filter((c): c is (typeof contracts)[number] => !!c);
+    const contractIds = await findConsumedContractIds(filePath, content, async () => (await client.listContracts()).contracts);
     await Promise.all(
-      matchedContracts.map((contract) => client.declareConsumer(contract.id, { path: filePath, agentId, declared: false }))
+      contractIds.map((contractId) => client.declareConsumer(contractId, { path: filePath, agentId, declared: false }))
     );
   } catch {
     // Never let a failed scan block the hook — same posture as detectBreakingChange.

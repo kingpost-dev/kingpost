@@ -3,6 +3,8 @@ import { writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../con
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
 import { writeResolvedPathHooks } from "./resolved-path-hooks.js";
 import { writeResolvedPathMcpConfig } from "./resolved-path-mcp.js";
+import { ApiClient } from "../api.js";
+import { scanRepo } from "../scan/scan-repo.js";
 
 function parseInviteLink(link: string): { serverUrl: string; projectId: string; token: string } {
   const url = new URL(link);
@@ -34,6 +36,16 @@ export async function joinCommand(link: string, opts: { name: string; cwd?: stri
   upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
   writeResolvedPathHooks(cwd);
   writeResolvedPathMcpConfig(cwd);
+
+  // Initial full-repo scan for derived consumer relationships. No agent is registered yet at this
+  // point, so relationships are recorded with a null agentId. scanRepo never throws, but guard
+  // anyway — a failed scan must never fail setup.
+  try {
+    const count = await scanRepo(cwd, new ApiClient(serverUrl, projectId, token), null);
+    if (count > 0) console.log(`Detected ${count} existing contract consumer relationship(s) from imports.`);
+  } catch {
+    // Never block setup on the scan.
+  }
 
   console.log(`Joined project ${projectId} as ${opts.name}.`);
   console.log(`Dashboard: ${serverUrl}/p/${projectId}#${token}`);

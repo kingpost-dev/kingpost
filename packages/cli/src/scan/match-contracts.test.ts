@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { resolveContractPaths, findConsumedContracts } from "./match-contracts.js";
+import { describe, it, expect, vi } from "vitest";
+import { resolveContractPaths, findConsumedContracts, findConsumedContractIds } from "./match-contracts.js";
 
 describe("resolveContractPaths", () => {
   it("resolves a parent-directory relative import", () => {
@@ -50,5 +50,27 @@ describe("findConsumedContracts", () => {
 
   it("strips a .d.ts extension fully, not just its trailing .ts", () => {
     expect(findConsumedContracts(["contracts/types"], ["contracts/types.d.ts"])).toEqual(["contracts/types.d.ts"]);
+  });
+});
+
+describe("findConsumedContractIds", () => {
+  const contracts = [
+    { id: "c_api", path: "contracts/api.ts" },
+    { id: "c_db", path: "contracts/db.ts" },
+  ];
+
+  it("returns the ids of registered contracts a file's relative imports resolve to", async () => {
+    const content = `import { X } from "../contracts/api";\nimport { h } from "./helpers";\n`;
+    expect(await findConsumedContractIds("src/a.ts", content, async () => contracts)).toEqual(["c_api"]);
+  });
+
+  it("returns [] without ever fetching contracts when the file has no relative imports", async () => {
+    const getContracts = vi.fn(async () => contracts);
+    expect(await findConsumedContractIds("src/a.ts", `import { z } from "zod";\n`, getContracts)).toEqual([]);
+    expect(getContracts).not.toHaveBeenCalled();
+  });
+
+  it("returns [] when no relative import matches a registered contract", async () => {
+    expect(await findConsumedContractIds("src/a.ts", `import { h } from "./helpers";\n`, async () => contracts)).toEqual([]);
   });
 });

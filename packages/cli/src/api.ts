@@ -69,7 +69,7 @@ export class ApiClient {
     return this.request<{ contract: Contract; versions: ContractVersion[] }>(`/contracts/${id}`, { method: "GET" });
   }
 
-  declareConsumer(contractId: string, body: { path: string; agentId: string; declared?: boolean }) {
+  declareConsumer(contractId: string, body: { path: string; agentId: string | null; declared?: boolean }) {
     return this.request<{ consumer: Consumer }>(`/contracts/${contractId}/consumers`, { method: "POST", body: JSON.stringify(body) });
   }
 

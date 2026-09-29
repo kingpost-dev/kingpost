@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { writeProjectConfig, writeCredential } from "../config.js";
 import { buildMcpServer } from "./server.js";
 import * as apiModule from "../api.js";
+import * as scanRepoModule from "../scan/scan-repo.js";
 
 describe("kingpost_who", () => {
   let cwd: string;
@@ -130,5 +131,40 @@ describe("kingpost_consume", () => {
     expect(declareSpy).toHaveBeenCalledWith("c1", { path: "ui/App.tsx", agentId: "agent_1" });
     expect(result.content[0].text).toContain("ui/App.tsx");
     expect(result.content[0].text).toContain("c1");
+  });
+});
+
+vi.mock("../scan/scan-repo.js", () => ({ scanRepo: vi.fn() }));
+
+describe("kingpost_scan", () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "kp-mcp-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      cursor: 0,
+    });
+  });
+
+  it("scans the current project with the registered agent id and reports the count", async () => {
+    vi.mocked(scanRepoModule.scanRepo).mockResolvedValue(3);
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_scan"];
+    if (!tool) throw new Error("Could not find kingpost_scan's registered callback on the McpServer instance.");
+    const result = await tool.handler({}, {});
+    expect(scanRepoModule.scanRepo).toHaveBeenCalledWith(cwd, expect.any(apiModule.ApiClient), "agent_1");
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain("3");
+  });
+
+  it("returns a readable error when unregistered", async () => {
+    const emptyCwd = mkdtempSync(join(tmpdir(), "kp-mcp-empty-"));
+    const server = buildMcpServer(emptyCwd);
+    const tool = (server as any)._registeredTools?.["kingpost_scan"];
+    const result = await tool.handler({}, {});
+    expect(result.isError).toBe(true);
   });
 });
