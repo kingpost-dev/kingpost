@@ -32,6 +32,7 @@ describe("kingpost_who", () => {
     if (!tool) throw new Error("Could not find kingpost_who's registered callback on the McpServer instance — inspect the actual SDK's internals and adjust this test.");
     const result = await tool.handler({}, {});
     expect(result.content[0].text).toContain("sam");
+    expect(result.content[0].text).toContain("agent_2");
   });
 
   it("returns a readable error instead of throwing when unregistered", async () => {

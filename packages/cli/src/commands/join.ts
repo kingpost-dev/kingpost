@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
-import { writeProjectConfig, writeCredential } from "../config.js";
+import { writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
+import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
 
 function parseInviteLink(link: string): { serverUrl: string; projectId: string; token: string } {
   const url = new URL(link);
@@ -27,6 +28,7 @@ export async function joinCommand(link: string, opts: { name: string; cwd?: stri
 
   writeProjectConfig(cwd, { serverUrl, projectId });
   writeCredential(projectId, token);
+  upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
 
   console.log(`Joined project ${projectId} as ${opts.name}.`);
   console.log(`Dashboard: ${serverUrl}/p/${projectId}#${token}`);

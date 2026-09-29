@@ -53,7 +53,7 @@ export function buildMcpServer(cwd: string) {
       const others = agents.filter((a) => a.id !== agentId);
       const text = others.length === 0
         ? "No other agents active."
-        : others.map((a) => `${a.userName} [${a.harness}]: ${a.statusText || "idle"} (claims: ${a.claims.join(", ") || "none"})`).join("\n");
+        : others.map((a) => `${a.userName} [${a.harness}] (id: ${a.id}): ${a.statusText || "idle"} (claims: ${a.claims.join(", ") || "none"})`).join("\n");
       const suffix = await renderDeltaSuffix(client, agentId);
       return { content: [{ type: "text" as const, text: text + suffix }] };
     } catch (e) {
