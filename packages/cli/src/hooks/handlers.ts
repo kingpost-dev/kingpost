@@ -14,6 +14,42 @@ function isContractPath(path: string | undefined): boolean {
   return !!path && path.startsWith("contracts/");
 }
 
+// hook.ts's shared HANDLER_TIMEOUT_MS budget (3000ms) now has to cover up to 3 sequential
+// network calls for a contract path (listContracts, getContract, publishContract). This caps
+// the lookup+diff step well below that so publishContract always gets a fair remaining share
+// of the window, rather than risking getting killed by hook.ts's unconditional process.exit(0).
+const LOOKUP_TIMEOUT_MS = 1000;
+
+/** Looks up the previous version of a contract and diffs it against the new content, treating
+ * a slow lookup, a missing previous version, or any lookup failure alike as "not breaking" —
+ * never let this block or fail the publish that follows. */
+async function detectBreakingChange(
+  client: ApiClient,
+  path: string,
+  format: "json-schema" | "openapi" | "unknown",
+  newContent: string
+): Promise<{ breaking: boolean; diffSummary?: string }> {
+  if (format !== "json-schema" && format !== "openapi") return { breaking: false };
+
+  try {
+    const lookup = (async (): Promise<string | null> => {
+      const { contracts } = await client.listContracts();
+      const existing = contracts.find((c) => c.path === path);
+      if (!existing) return null;
+      const { versions } = await client.getContract(existing.id);
+      return versions[0]?.content ?? null;
+    })();
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), LOOKUP_TIMEOUT_MS));
+    const previousContent = await Promise.race([lookup, timeout]);
+    if (!previousContent) return { breaking: false };
+
+    const result = format === "json-schema" ? diffJsonSchema(previousContent, newContent) : await diffOpenApi(previousContent, newContent);
+    return { breaking: result.breaking, diffSummary: result.summary };
+  } catch {
+    return { breaking: false };
+  }
+}
+
 interface AgentContext {
   client: ApiClient;
   agentId: string;
@@ -118,28 +154,7 @@ export async function handlePostToolUse(input: HookInput): Promise<string> {
     const content = readFileSync(fullPath, "utf8");
     const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? "unknown";
     const format = detectFormat(input.filePath, content);
-
-    let breaking = false;
-    let diffSummary: string | undefined;
-    if (format === "json-schema" || format === "openapi") {
-      try {
-        const { contracts } = await ctx.client.listContracts();
-        const existing = contracts.find((c) => c.path === input.filePath);
-        if (existing) {
-          const { versions } = await ctx.client.getContract(existing.id);
-          const previousContent = versions[0]?.content;
-          if (previousContent) {
-            const result = format === "json-schema" ? diffJsonSchema(previousContent, content) : await diffOpenApi(previousContent, content);
-            breaking = result.breaking;
-            diffSummary = result.summary;
-          }
-        }
-      } catch {
-        // Never let a failed lookup block the publish — same posture as every other
-        // non-critical network call in this hook.
-      }
-    }
-
+    const { breaking, diffSummary } = await detectBreakingChange(ctx.client, input.filePath, format, content);
     await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName, format, breaking, diffSummary });
   }
 

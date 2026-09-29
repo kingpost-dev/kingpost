@@ -205,6 +205,45 @@ describe("handlePostToolUse — breaking-change detection", () => {
     );
   });
 
+  it("treats a lookup that resolves after LOOKUP_TIMEOUT_MS as no previous version, without blocking the publish", async () => {
+    vi.useFakeTimers();
+    try {
+      const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-lookupslow-"));
+      mkdirSync(join(cwd, "contracts"), { recursive: true });
+      writeFileSync(join(cwd, "contracts/schema.json"), nextSchema);
+      writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+      writeCredential("proj_1", "tok_1");
+
+      // Resolves eventually with a real previous version, but only after 5000ms — well past the
+      // 1000ms LOOKUP_TIMEOUT_MS internal cap, so it should lose the race and be treated the same
+      // as "no previous version" rather than being awaited to completion.
+      vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve({ contracts: [{ id: "contract_1", path: "contracts/schema.json" } as any] }), 5000);
+          })
+      );
+      const getContractSpy = vi.spyOn(apiModule.ApiClient.prototype, "getContract").mockResolvedValue({
+        contract: {} as any,
+        versions: [{ content: previousSchema } as any],
+      });
+      const publishSpy = vi
+        .spyOn(apiModule.ApiClient.prototype, "publishContract")
+        .mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
+
+      const resultPromise = handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/schema.json" });
+      await vi.advanceTimersByTimeAsync(1000); // LOOKUP_TIMEOUT_MS in handlers.ts
+      await resultPromise;
+
+      expect(getContractSpy).not.toHaveBeenCalled();
+      expect(publishSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ path: "contracts/schema.json", format: "json-schema", breaking: false, diffSummary: undefined })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("treats a failed listContracts lookup as no previous version, without blocking the publish", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-lookupfail-"));
     mkdirSync(join(cwd, "contracts"), { recursive: true });
