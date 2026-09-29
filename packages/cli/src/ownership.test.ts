@@ -110,4 +110,8 @@ describe("routeQuestionTarget", () => {
     // instead — that would silently misroute a question about lib/api.ts to the wrong contract's owner.
     expect(routeQuestionTarget("about lib/api.ts", two, [owner, asker], "agent_asker")).toBeNull();
   });
+
+  it("matches case-insensitively", () => {
+    expect(routeQuestionTarget("does CONTRACTS/API.TS support pagination?", contracts, [owner, asker], "agent_asker")).toBe("agent_owner");
+  });
 });
