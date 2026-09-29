@@ -19,4 +19,7 @@ describe("detectFormat", () => {
   it("returns unknown for unrelated JSON", () => {
     expect(detectFormat("contracts/config.json", JSON.stringify({ foo: "bar" }))).toBe("unknown");
   });
+  it("detects a Drizzle schema by its pgTable call", () => {
+    expect(detectFormat("contracts/schema.ts", 'export const users = pgTable("users", { id: text("id").primaryKey() });')).toBe("drizzle");
+  });
 });

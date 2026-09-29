@@ -1,4 +1,6 @@
-export function detectFormat(path: string, content: string): "json-schema" | "openapi" | "unknown" {
+export function detectFormat(path: string, content: string): "json-schema" | "openapi" | "drizzle" | "unknown" {
+  if (/\bpgTable\s*\(/.test(content)) return "drizzle";
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);

@@ -26,7 +26,7 @@ const LOOKUP_TIMEOUT_MS = 1000;
 async function detectBreakingChange(
   client: ApiClient,
   path: string,
-  format: "json-schema" | "openapi" | "unknown",
+  format: "json-schema" | "openapi" | "drizzle" | "unknown",
   newContent: string
 ): Promise<{ breaking: boolean; diffSummary?: string }> {
   if (format !== "json-schema" && format !== "openapi") return { breaking: false };
