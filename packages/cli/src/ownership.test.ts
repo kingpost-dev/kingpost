@@ -52,4 +52,15 @@ describe("formatAgentLine", () => {
       "sam [claude] (id: agent_1): idle (claims: none)"
     );
   });
+
+  it("credits ownership to every agent sharing the owner's username, not just one agent id", () => {
+    // The whole reason this matches on userName instead of agent id: the same person can be
+    // running two agent processes (e.g. Claude Code in one worktree, Codex in another) that
+    // both own whatever contracts that person owns.
+    const contracts = [contract({ path: "contracts/api.ts", ownerUserName: "sam" })];
+    const claudeAgent = agent({ id: "agent_claude", harness: "claude" });
+    const codexAgent = agent({ id: "agent_codex", harness: "codex" });
+    expect(formatAgentLine(claudeAgent, contracts)).toContain("(owns: contracts/api.ts)");
+    expect(formatAgentLine(codexAgent, contracts)).toContain("(owns: contracts/api.ts)");
+  });
 });
