@@ -1,0 +1,71 @@
+name: Publish to npm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/protocol/package.json"
+      - "packages/cli/package.json"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish-protocol:
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.check.outputs.published }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - id: check
+        run: |
+          LOCAL=$(node -p "require('./packages/protocol/package.json').version")
+          PUBLISHED=$(npm view @kingpost/protocol version 2>/dev/null || echo "none")
+          echo "local=$LOCAL published-on-npm=$PUBLISHED"
+          if [ "$LOCAL" != "$PUBLISHED" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.published == 'true'
+        run: npm run build --workspace=packages/protocol
+      - if: steps.check.outputs.published == 'true'
+        run: npx vitest run packages/protocol
+      - if: steps.check.outputs.published == 'true'
+        run: npm publish --workspace=packages/protocol
+
+  publish-cli:
+    needs: publish-protocol
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - id: check
+        run: |
+          LOCAL=$(node -p "require('./packages/cli/package.json').version")
+          PUBLISHED=$(npm view kingpost version 2>/dev/null || echo "none")
+          echo "local=$LOCAL published-on-npm=$PUBLISHED"
+          if [ "$LOCAL" != "$PUBLISHED" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.published == 'true'
+        run: npm run build --workspace=packages/cli
+      - if: steps.check.outputs.published == 'true'
+        run: npm test
+      - if: steps.check.outputs.published == 'true'
+        run: npm publish --workspace=packages/cli
