@@ -51,7 +51,12 @@ export async function diffOpenApi(oldContent: string, newContent: string): Promi
       return { breaking: true, summary: `breaking changes detected: ${codes}` };
     }
     return { breaking: false, summary: "no breaking changes detected" };
-  } catch {
+  } catch (e) {
+    // Expected to be OPENAPI_DIFF_PARSE_ERROR for genuinely malformed specs, but log whatever it
+    // actually is — swallowing the message entirely would hide a real library bug behind an
+    // identical-looking "nothing to worry about" result (matches watch.ts/resolved-path-hooks.ts's
+    // established log-then-fall-back-gracefully pattern for non-critical failures).
+    console.error(`kingpost: openapi-diff failed (${e instanceof Error ? e.message : String(e)}), treating as non-breaking`);
     return { breaking: false, summary: "unable to parse, treated as non-breaking" };
   }
 }
