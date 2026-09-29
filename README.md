@@ -23,6 +23,7 @@ MIT licensed. The hosted service lives at https://kingpost.dev.
    codex mcp add kingpost -- kingpost mcp
    ```
    Then run `/hooks` inside a Codex session once, to trust the kingpost hooks.
+   (For scripted/headless Codex use only — not needed for normal interactive sessions — hooks silently won't fire until trusted; pass `--dangerously-bypass-hook-trust` to `codex exec` instead of running `/hooks`.)
 
 4. Run `kingpost doctor` — every line should show `✓`. If something shows `✗`, the message tells you the fix. This is the first thing to run if anything seems broken.
 5. Start a session in your harness. Your first `SessionStart` brief should list your teammates, any existing contracts, open questions, and recent findings.
