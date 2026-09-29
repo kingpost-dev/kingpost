@@ -81,6 +81,43 @@ function checkCodexResolvedPathHooks(cwd: string): Check {
   }
 }
 
+// The plugin's own MCP manifests (.mcp.json / mcp.json) register the kingpost MCP server via a
+// bare `kingpost` command, which is presumed broken on Windows for the same PATH-inheritance
+// reason as the hooks above. `kingpost init`/`kingpost join` also write a project-scope override
+// with resolved absolute paths — check it's actually there. This only checks the file's shape,
+// not that Claude Code is actually using it (project-scope `.mcp.json` always outranks the
+// plugin's entry by name, so no separate "which one wins" check is needed here).
+function checkClaudeMcpConfig(cwd: string): Check {
+  const label = "Claude Code resolved-path MCP registration (Windows safety net)";
+  const p = join(cwd, ".mcp.json");
+  const detail = "missing or incomplete .mcp.json — run 'kingpost init' or 'kingpost join'";
+  if (!existsSync(p)) return { label, ok: false, detail };
+  try {
+    const config = JSON.parse(readFileSync(p, "utf8"));
+    const entry = config?.mcpServers?.kingpost;
+    const ok = typeof entry?.command === "string" && Array.isArray(entry.args) && entry.args[entry.args.length - 1] === "mcp";
+    return { label, ok, detail: ok ? undefined : detail };
+  } catch {
+    return { label, ok: false, detail };
+  }
+}
+
+// Same as checkClaudeMcpConfig, but for Codex's project-scope `.codex/config.toml`. Unlike the
+// Claude Code case, this project-scope override only takes effect if Codex has the project
+// marked trusted — an untrusted project skips the project-scope layer entirely and falls back to
+// the still-broken user-level `~/.codex/config.toml` entry (same class of manual step as the
+// `/hooks` trust requirement documented elsewhere). This check only verifies the file content is
+// correct, not that Codex actually trusts the project — that can't be checked from here.
+function checkCodexProjectMcp(cwd: string): Check {
+  const label = "Codex resolved-path MCP registration (Windows safety net)";
+  const p = join(cwd, ".codex", "config.toml");
+  const detail = "missing or incomplete in .codex/config.toml — run 'kingpost init' or 'kingpost join' (also requires the project to be trusted in Codex for this override to take effect)";
+  if (!existsSync(p)) return { label, ok: false, detail };
+  const content = readFileSync(p, "utf8");
+  const ok = /^\[mcp_servers\.kingpost\]/m.test(content) && /^args = \[.*"mcp"\]\s*$/m.test(content);
+  return { label, ok, detail: ok ? undefined : detail };
+}
+
 // Older Codex CLI versions (confirmed: v0.104.0) have no `plugin` subcommand at all — it was
 // added later (confirmed present in v0.158.0) — so `codex plugin marketplace add ...` / `codex
 // plugin add ...` fail outright, and hooks (which only ship via the plugin mechanism) never get
@@ -163,9 +200,11 @@ export async function doctorCommand(cwd: string = process.cwd()): Promise<void> 
 
   checks.push(checkClaudePlugin(cwd));
   checks.push(checkClaudeResolvedPathHooks(cwd));
+  checks.push(checkClaudeMcpConfig(cwd));
   checks.push(checkCodexPluginSupport());
   checks.push(checkCodexPlugin());
   checks.push(checkCodexMcp());
+  checks.push(checkCodexProjectMcp(cwd));
   checks.push(checkCodexResolvedPathHooks(cwd));
   checks.push(checkCodexAppServerDaemon());
 

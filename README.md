@@ -24,6 +24,7 @@ MIT licensed. The hosted service lives at https://kingpost.dev.
    ```
    Then run `/hooks` inside a Codex session once, to trust the kingpost hooks.
    (For scripted/headless Codex use only — not needed for normal interactive sessions — hooks silently won't fire until trusted; pass `--dangerously-bypass-hook-trust` to `codex exec` instead of running `/hooks`.)
+   Trusting the project this way is also required for the automatic Windows MCP-registration safety net below to take effect for Codex.
 
 4. Run `kingpost doctor` — every line should show `✓`. If something shows `✗`, the message tells you the fix. This is the first thing to run if anything seems broken.
 5. Start a session in your harness. Your first `SessionStart` brief should list your teammates, any existing contracts, open questions, and recent findings.
@@ -57,3 +58,5 @@ Run `kingpost doctor` first — it checks your config, credentials, server conne
 Older Codex CLI versions have no `plugin` subcommand at all, so the `codex plugin marketplace add ...` / `codex plugin add ...` steps above will fail outright. If that happens, just run `codex mcp add kingpost -- kingpost mcp` — the MCP tools will work, but hooks/context-injection won't (they require the plugin mechanism). Upgrade your Codex CLI to get the full experience.
 
 On Windows, the plugin's own hooks can silently no-op because the harness runs them through a shell that doesn't inherit your PATH. `kingpost init`/`kingpost join` already write a second hook config using fully resolved absolute paths as a safety net — no user action needed, it's just plumbing. `kingpost doctor` checks it's present.
+
+The same PATH problem can break the plugin's MCP server registration (the bare `kingpost mcp` command in the plugin manifests), so `kingpost init`/`kingpost join` also write a project-scope MCP entry with fully resolved absolute paths — a `.mcp.json` for Claude Code and a `.codex/config.toml` for Codex — which take precedence over the plugin's own entry. For Codex, this override only takes effect once the project is trusted (see the `/hooks` note above); an untrusted project silently falls back to the plugin's unfixed registration. `kingpost doctor` checks both are present.

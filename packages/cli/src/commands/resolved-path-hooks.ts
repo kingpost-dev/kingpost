@@ -114,7 +114,7 @@ function upsertMatcherGroup(
   return list;
 }
 
-function readJsonObject(path: string): Record<string, unknown> {
+export function readJsonObject(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   const parsed = JSON.parse(readFileSync(path, "utf8"));
   return typeof parsed === "object" && parsed !== null ? parsed : {};

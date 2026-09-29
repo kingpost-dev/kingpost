@@ -3,6 +3,7 @@ import { DEFAULT_SERVER_URL, projectConfigPath, readProjectConfig, writeProjectC
 import { createProject } from "../api.js";
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
 import { writeResolvedPathHooks } from "./resolved-path-hooks.js";
+import { writeResolvedPathMcpConfig } from "./resolved-path-mcp.js";
 
 export async function initCommand(name: string, opts: { serverUrl?: string; cwd?: string }) {
   const serverUrl = opts.serverUrl ?? DEFAULT_SERVER_URL;
@@ -25,6 +26,7 @@ export async function initCommand(name: string, opts: { serverUrl?: string; cwd?
   writeCredential(projectId, token);
   upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
   writeResolvedPathHooks(cwd);
+  writeResolvedPathMcpConfig(cwd);
 
   console.log(`Kingpost project "${name}" created.`);
   console.log(`Invite link:    ${serverUrl}/join/${projectId}#${token}`);
