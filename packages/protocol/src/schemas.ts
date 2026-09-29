@@ -34,6 +34,8 @@ export const ContractVersionSchema = z.object({
   contentSha256: z.string(),
   content: z.string().nullable(), // null when content exceeded the 64KB cap
   updatedBy: z.string(),
+  breaking: z.boolean(),
+  diffSummary: z.string().nullable(),
   createdAt: z.string(),
 });
 export type ContractVersion = z.infer<typeof ContractVersionSchema>;

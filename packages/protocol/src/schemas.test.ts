@@ -15,7 +15,8 @@ describe("ContractVersionSchema", () => {
   it("parses a valid version", () => {
     const result = ContractVersionSchema.safeParse({
       id: "cv_1", contractId: "contract_1", version: 1, contentSha256: "abc",
-      content: "export type Foo = {}", updatedBy: "sam", createdAt: "2026-09-28T00:00:00.000Z",
+      content: "export type Foo = {}", updatedBy: "sam", breaking: false, diffSummary: null,
+      createdAt: "2026-09-28T00:00:00.000Z",
     });
     expect(result.success).toBe(true);
   });
