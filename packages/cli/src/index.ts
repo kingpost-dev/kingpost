@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
 import { joinCommand } from "./commands/join.js";
@@ -8,8 +9,10 @@ import { doctorCommand } from "./commands/doctor.js";
 import { inboxCommand } from "./commands/inbox.js";
 import { HarnessSchema } from "@kingpost/protocol";
 
+const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
+
 const program = new Command();
-program.name("kingpost").version("0.1.0");
+program.name("kingpost").version(version);
 
 program
   .command("init")

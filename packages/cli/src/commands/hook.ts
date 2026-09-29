@@ -18,7 +18,13 @@ const HANDLERS: Record<HookInput["hookEventName"], (input: HookInput) => Promise
   PostToolUse: handlePostToolUse,
 };
 
-const HOOK_TIMEOUT_MS = 1500;
+const STDIN_TIMEOUT_MS = 1500;
+// A cold first call does register-agent + several list calls + a delta fetch over the network,
+// and on Windows a fresh node.exe process start adds real overhead on top — measured 1952ms on a
+// real machine, above the old shared 1500ms budget, which silently dropped the SessionStart
+// brief. Warm/cached calls finish far under this; Promise.race means the higher ceiling only
+// matters for the slow, rare case.
+const HANDLER_TIMEOUT_MS = 3000;
 
 function log(message: string): void {
   try {
@@ -43,7 +49,7 @@ export async function hookCommand(harness: Harness): Promise<void> {
   try {
     const raw = await Promise.race([
       readStdin(),
-      new Promise<string>((resolve) => setTimeout(() => resolve(""), HOOK_TIMEOUT_MS)),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), STDIN_TIMEOUT_MS)),
     ]);
     if (!raw) return;
 
@@ -53,7 +59,7 @@ export async function hookCommand(harness: Harness): Promise<void> {
 
     const additionalContext = await Promise.race([
       handler(input),
-      new Promise<string>((resolve) => setTimeout(() => resolve(""), HOOK_TIMEOUT_MS)),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), HANDLER_TIMEOUT_MS)),
     ]);
 
     if (additionalContext) {
