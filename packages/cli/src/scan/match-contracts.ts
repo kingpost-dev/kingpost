@@ -41,7 +41,12 @@ export function findConsumedContracts(resolvedPaths: string[], contractPaths: st
  * full-repo scan: given one file's path and content, returns the ids of the registered contracts
  * it consumes via relative imports. `getContracts` is only called if the file has at least one
  * relative import, so a per-file caller can skip the network lookup entirely for files that
- * can't possibly match. */
+ * can't possibly match.
+ *
+ * Lives here rather than in scan-repo.ts (where the full-repo scan itself lives) to avoid a
+ * circular import: scan-repo.ts already imports isContractPath from hooks/handlers.ts, and
+ * hooks/handlers.ts needs this function — putting this function in scan-repo.ts would create
+ * handlers.ts -> scan-repo.ts -> handlers.ts. */
 export async function findConsumedContractIds(
   filePath: string,
   content: string,
