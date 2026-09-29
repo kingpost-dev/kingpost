@@ -10,7 +10,11 @@ export interface BriefInput {
 }
 
 export function renderBrief(input: BriefInput): string {
-  const lines: string[] = ["## Kingpost brief"];
+  // Always state the teammate count explicitly, even when zero — otherwise a fresh solo project
+  // (the exact state every teammate starts in before others join) renders as a brief with no
+  // "Active teammates" section at all, which reads as "nothing was delivered" rather than
+  // "confirmed: you're alone right now" (observed repeatedly in real testing).
+  const lines: string[] = ["## Kingpost brief", `${input.agents.length} teammate${input.agents.length === 1 ? "" : "s"} active`];
 
   if (input.agents.length > 0) {
     lines.push("### Active teammates");

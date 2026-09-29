@@ -22,6 +22,11 @@ describe("renderBrief", () => {
     expect(brief.split("\n").length).toBeLessThanOrEqual(30);
   });
 
+  it("states 0 teammates active explicitly rather than omitting the count", () => {
+    const brief = renderBrief({ agents: [], contracts: [], openQuestions: [], recentFindings: [] });
+    expect(brief).toContain("0 teammates active");
+  });
+
   it("includes a teammate's status", () => {
     const brief = renderBrief({
       agents: [
