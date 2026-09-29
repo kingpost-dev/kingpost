@@ -9,6 +9,7 @@ import { TEAMMATE_LABEL, renderDeltaLines } from "../delta-format.js";
 import { detectFormat } from "../differs/detect-format.js";
 import { diffJsonSchema } from "../differs/json-schema.js";
 import { diffOpenApi } from "../differs/openapi.js";
+import { diffDrizzle } from "../differs/drizzle.js";
 
 function isContractPath(path: string | undefined): boolean {
   return !!path && path.startsWith("contracts/");
@@ -29,7 +30,7 @@ async function detectBreakingChange(
   format: "json-schema" | "openapi" | "drizzle" | "unknown",
   newContent: string
 ): Promise<{ breaking: boolean; diffSummary?: string }> {
-  if (format !== "json-schema" && format !== "openapi") return { breaking: false };
+  if (format !== "json-schema" && format !== "openapi" && format !== "drizzle") return { breaking: false };
 
   try {
     const lookup = (async (): Promise<string | null> => {
@@ -43,7 +44,10 @@ async function detectBreakingChange(
     const previousContent = await Promise.race([lookup, timeout]);
     if (!previousContent) return { breaking: false };
 
-    const result = format === "json-schema" ? diffJsonSchema(previousContent, newContent) : await diffOpenApi(previousContent, newContent);
+    const result =
+      format === "json-schema" ? diffJsonSchema(previousContent, newContent) :
+      format === "openapi" ? await diffOpenApi(previousContent, newContent) :
+      diffDrizzle(previousContent, newContent);
     return { breaking: result.breaking, diffSummary: result.summary };
   } catch {
     return { breaking: false };

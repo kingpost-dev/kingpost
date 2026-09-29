@@ -6,6 +6,7 @@ import { writeProjectConfig, writeCredential, readProjectConfig } from "../confi
 import { handleSessionStart, handlePreToolUse, handlePostToolUse } from "./handlers.js";
 import * as apiModule from "../api.js";
 import { diffJsonSchema } from "../differs/json-schema.js";
+import { diffDrizzle } from "../differs/drizzle.js";
 
 // node:fs's own exports aren't configurable, so `vi.spyOn(fs, "readFileSync")` throws
 // ("Cannot redefine property"). Mocking the module (spreading the real implementation, only
@@ -261,5 +262,41 @@ describe("handlePostToolUse — breaking-change detection", () => {
     expect(publishSpy).toHaveBeenCalledWith(
       expect.objectContaining({ path: "contracts/schema.json", format: "json-schema", breaking: false, diffSummary: undefined })
     );
+  });
+
+  // Same fixture pattern as differs/drizzle.test.ts's "flags a dropped column as breaking" case
+  // — confirms diffDrizzle is actually wired into detectBreakingChange's dispatch, not just
+  // imported, for the "drizzle" format branch.
+  it("diffs a Drizzle contract against the previous version and passes real breaking/diffSummary to publishContract", async () => {
+    const previousDrizzle = `import { pgTable, text } from "drizzle-orm/pg-core";\nexport const users = pgTable("users", { id: text("id").primaryKey(), email: text("email").notNull() });`;
+    const nextDrizzle = `import { pgTable, text } from "drizzle-orm/pg-core";\nexport const users = pgTable("users", { id: text("id").primaryKey() });`;
+
+    const expected = diffDrizzle(previousDrizzle, nextDrizzle);
+    expect(expected.breaking).toBe(true); // sanity-check the fixture actually triggers a breaking diff
+
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-drizzle-breaking-"));
+    mkdirSync(join(cwd, "contracts"), { recursive: true });
+    writeFileSync(join(cwd, "contracts/schema.ts"), nextDrizzle);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "contract_1", path: "contracts/schema.ts" } as any],
+    });
+    vi.spyOn(apiModule.ApiClient.prototype, "getContract").mockResolvedValue({
+      contract: {} as any,
+      versions: [{ content: previousDrizzle } as any],
+    });
+    const publishSpy = vi
+      .spyOn(apiModule.ApiClient.prototype, "publishContract")
+      .mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/schema.ts" });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "contracts/schema.ts", format: "drizzle", breaking: true, diffSummary: expected.summary })
+    );
+    expect(expected.summary).toContain("email");
+    expect(expected.summary).toContain("dropped");
   });
 });
