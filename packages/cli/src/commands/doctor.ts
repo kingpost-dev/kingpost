@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execSync } from "node:child_process";
 import { readProjectConfig, getToken } from "../config.js";
+import { CLAUDE_HOOK_EVENTS, CODEX_HOOK_EVENTS, isKingpostClaudeHook, isKingpostCodexHook } from "./resolved-path-hooks.js";
 
 interface Check {
   label: string;
@@ -33,6 +35,66 @@ function checkClaudePlugin(cwd: string): Check {
     }
   }
   return { label: "Claude Code plugin installed", ok: false, detail: "not found in .claude/settings*.json — run 'claude plugin install kingpost@kingpost --scope project'" };
+}
+
+// The plugin's own hooks/hooks.json invokes a bare `kingpost` on PATH, which silently no-ops on
+// Windows (see resolved-path-hooks.ts for why). `kingpost init`/`kingpost join` also write a
+// second, resolved-absolute-path hook config as a safety net — check that it's actually there.
+function hasKingpostHookEntry(hooksByEvent: unknown, event: string, isOwn: (hook: unknown, event: string) => boolean): boolean {
+  const groups = typeof hooksByEvent === "object" && hooksByEvent !== null ? (hooksByEvent as Record<string, unknown>)[event] : undefined;
+  if (!Array.isArray(groups)) return false;
+  return groups.some((g) => {
+    const hooks = typeof g === "object" && g !== null ? (g as Record<string, unknown>).hooks : undefined;
+    return Array.isArray(hooks) && hooks.some((h) => isOwn(h, event));
+  });
+}
+
+function checkClaudeResolvedPathHooks(cwd: string): Check {
+  const label = "Claude Code resolved-path hooks (Windows safety net)";
+  const p = join(cwd, ".claude", "settings.json");
+  const detail = "missing or incomplete in .claude/settings.json — run 'kingpost init' or 'kingpost join'";
+  if (!existsSync(p)) return { label, ok: false, detail };
+  try {
+    const settings = JSON.parse(readFileSync(p, "utf8"));
+    const ok = CLAUDE_HOOK_EVENTS.every(({ event }) => hasKingpostHookEntry(settings.hooks, event, isKingpostClaudeHook));
+    return { label, ok, detail: ok ? undefined : detail };
+  } catch {
+    return { label, ok: false, detail };
+  }
+}
+
+function checkCodexResolvedPathHooks(cwd: string): Check {
+  const label = "Codex resolved-path hooks (Windows safety net)";
+  const p = join(cwd, ".codex", "hooks.json");
+  const detail = "missing or incomplete in .codex/hooks.json — run 'kingpost init' or 'kingpost join'";
+  if (!existsSync(p)) return { label, ok: false, detail };
+  try {
+    const config = JSON.parse(readFileSync(p, "utf8"));
+    const ok = CODEX_HOOK_EVENTS.every(({ event }) => hasKingpostHookEntry(config.hooks, event, isKingpostCodexHook));
+    return { label, ok, detail: ok ? undefined : detail };
+  } catch {
+    return { label, ok: false, detail };
+  }
+}
+
+// Older Codex CLI versions (confirmed: v0.104.0) have no `plugin` subcommand at all — it was
+// added later (confirmed present in v0.158.0) — so `codex plugin marketplace add ...` / `codex
+// plugin add ...` fail outright, and hooks (which only ship via the plugin mechanism) never get
+// installed. Detect this by checking Codex's own --help output for the `plugin` subcommand.
+function checkCodexPluginSupport(): Check {
+  const detail =
+    "installed Codex CLI has no 'plugin' subcommand — upgrade Codex CLI for hooks, or fall back to 'codex mcp add kingpost -- kingpost mcp' for MCP tools only (no hooks)";
+  try {
+    const output = execSync("codex --help", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const ok = /\bplugin\b/.test(output);
+    return { label: "Codex CLI supports 'plugin' subcommand", ok, detail: ok ? undefined : detail };
+  } catch (e) {
+    return {
+      label: "Codex CLI supports 'plugin' subcommand",
+      ok: false,
+      detail: `couldn't run 'codex --help': ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
 }
 
 function checkCodexPlugin(): Check {
@@ -80,8 +142,11 @@ export async function doctorCommand(cwd: string = process.cwd()): Promise<void> 
   }
 
   checks.push(checkClaudePlugin(cwd));
+  checks.push(checkClaudeResolvedPathHooks(cwd));
+  checks.push(checkCodexPluginSupport());
   checks.push(checkCodexPlugin());
   checks.push(checkCodexMcp());
+  checks.push(checkCodexResolvedPathHooks(cwd));
 
   for (const c of checks) {
     console.log(c.ok ? `✓ ${c.label}` : `✗ ${c.label}: ${c.detail}`);

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { DEFAULT_SERVER_URL, projectConfigPath, readProjectConfig, writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
 import { createProject } from "../api.js";
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
+import { writeResolvedPathHooks } from "./resolved-path-hooks.js";
 
 export async function initCommand(name: string, opts: { serverUrl?: string; cwd?: string }) {
   const serverUrl = opts.serverUrl ?? DEFAULT_SERVER_URL;
@@ -23,6 +24,7 @@ export async function initCommand(name: string, opts: { serverUrl?: string; cwd?
   writeProjectConfig(cwd, { serverUrl, projectId });
   writeCredential(projectId, token);
   upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
+  writeResolvedPathHooks(cwd);
 
   console.log(`Kingpost project "${name}" created.`);
   console.log(`Invite link:    ${serverUrl}/join/${projectId}#${token}`);

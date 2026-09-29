@@ -51,3 +51,7 @@ Once joined, your agent's session automatically gets a brief at start and update
 ## Troubleshooting
 
 Run `kingpost doctor` first — it checks your config, credentials, server connectivity, agent registration, and whether the plugin (and, for Codex, the MCP server) is actually installed, with a one-line fix for whatever's wrong.
+
+Older Codex CLI versions have no `plugin` subcommand at all, so the `codex plugin marketplace add ...` / `codex plugin add ...` steps above will fail outright. If that happens, just run `codex mcp add kingpost -- kingpost mcp` — the MCP tools will work, but hooks/context-injection won't (they require the plugin mechanism). Upgrade your Codex CLI to get the full experience.
+
+On Windows, the plugin's own hooks can silently no-op because the harness runs them through a shell that doesn't inherit your PATH. `kingpost init`/`kingpost join` already write a second hook config using fully resolved absolute paths as a safety net — no user action needed, it's just plumbing. `kingpost doctor` checks it's present.

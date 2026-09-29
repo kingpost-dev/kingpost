@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
+import { writeResolvedPathHooks } from "./resolved-path-hooks.js";
 
 function parseInviteLink(link: string): { serverUrl: string; projectId: string; token: string } {
   const url = new URL(link);
@@ -13,9 +14,10 @@ function parseInviteLink(link: string): { serverUrl: string; projectId: string; 
   return { serverUrl: `${url.protocol}//${url.host}`, projectId, token };
 }
 
-function which(bin: string): boolean {
+export function which(bin: string): boolean {
   try {
-    execSync(`command -v ${bin}`, { stdio: "ignore" });
+    const probe = process.platform === "win32" ? `where ${bin}` : `command -v ${bin}`;
+    execSync(probe, { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -29,6 +31,7 @@ export async function joinCommand(link: string, opts: { name: string; cwd?: stri
   writeProjectConfig(cwd, { serverUrl, projectId });
   writeCredential(projectId, token);
   upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
+  writeResolvedPathHooks(cwd);
 
   console.log(`Joined project ${projectId} as ${opts.name}.`);
   console.log(`Dashboard: ${serverUrl}/p/${projectId}#${token}`);
