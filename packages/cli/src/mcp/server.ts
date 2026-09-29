@@ -128,7 +128,7 @@ export function buildMcpServer(cwd: string) {
       const { client, agentId } = ctx();
       const { contract, versions } = await client.getContract(id);
       const header = `[${contract.id}] ${contract.path} (${contract.format}) — owner: ${contract.ownerUserName ?? "unowned"}, current v${contract.currentVersion}`;
-      const history = versions.map((v) => `- v${v.version} by ${v.updatedBy} at ${v.createdAt}`).join("\n");
+      const history = versions.map((v) => `- v${v.version} by ${v.updatedBy} at ${v.createdAt}${v.breaking ? ` ⚠ BREAKING: ${v.diffSummary}` : ""}`).join("\n");
       const suffix = await renderDeltaSuffix(client, agentId);
       return { content: [{ type: "text" as const, text: `${header}\n${history}${suffix}` }] };
     } catch (e) {
