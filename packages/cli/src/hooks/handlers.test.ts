@@ -313,10 +313,13 @@ describe("handlePostToolUse — derived consumer scanning", () => {
       contracts: [{ id: "contract_1", path: "contracts/api.ts" } as any],
     });
     const declareSpy = vi.spyOn(apiModule.ApiClient.prototype, "declareConsumer").mockResolvedValue({ consumer: {} as any });
+    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract");
 
     await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "src/consumer.ts" });
 
     expect(declareSpy).toHaveBeenCalledWith("contract_1", { path: "src/consumer.ts", agentId: "agent_1", declared: false });
+    // Mutual-exclusivity, other direction: a source-file write must never hit the contract-publish path.
+    expect(publishSpy).not.toHaveBeenCalled();
   });
 
   it("does not declare a consumer when the file has no relative imports (skips listContracts entirely)", async () => {

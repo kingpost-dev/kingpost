@@ -36,10 +36,12 @@ async function scanForConsumedContracts(
     const { contracts } = await client.listContracts();
     const consumed = findConsumedContracts(resolved, contracts.map((c) => c.path));
     if (consumed.length === 0) return;
-    for (const contractPath of consumed) {
-      const contract = contracts.find((c) => c.path === contractPath);
-      if (contract) await client.declareConsumer(contract.id, { path: filePath, agentId, declared: false });
-    }
+    const matchedContracts = consumed
+      .map((contractPath) => contracts.find((c) => c.path === contractPath))
+      .filter((c): c is (typeof contracts)[number] => !!c);
+    await Promise.all(
+      matchedContracts.map((contract) => client.declareConsumer(contract.id, { path: filePath, agentId, declared: false }))
+    );
   } catch {
     // Never let a failed scan block the hook — same posture as detectBreakingChange.
   }
