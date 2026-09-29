@@ -27,7 +27,7 @@ export function renderBrief(input: BriefInput): string {
   if (input.contracts.length > 0) {
     lines.push("### Contracts");
     for (const c of input.contracts.slice(0, 8)) {
-      lines.push(`- ${c.path} v${c.version} (by ${c.updatedBy})`);
+      lines.push(`- ${c.path} v${c.currentVersion} (by ${c.ownerUserName ?? "unknown"})`);
     }
   }
 

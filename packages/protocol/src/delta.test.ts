@@ -24,12 +24,22 @@ function contractEvent(id: number, agentId: string): Event {
     payload: {
       type: "contract_published",
       contract: {
+        id: "contract_1",
         path: "contracts/api.ts",
+        format: "unknown",
+        currentVersion: 2,
+        ownerAgentId: agentId,
+        ownerUserName: null,
+        createdAt: "2026-09-28T00:00:00.000Z",
+      },
+      version: {
+        id: "cv_1",
+        contractId: "contract_1",
         version: 2,
         contentSha256: "abc",
         content: "export type X = number;",
         updatedBy: agentId,
-        updatedAt: "2026-09-28T00:01:00.000Z",
+        createdAt: "2026-09-28T00:01:00.000Z",
       },
     },
   };

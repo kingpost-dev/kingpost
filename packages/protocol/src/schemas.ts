@@ -17,14 +17,36 @@ export const AgentSchema = z.object({
 export type Agent = z.infer<typeof AgentSchema>;
 
 export const ContractSchema = z.object({
+  id: z.string(),
   path: z.string(),
+  format: z.enum(["json-schema", "openapi", "drizzle", "typescript", "protobuf", "unknown"]),
+  currentVersion: z.number().int(),
+  ownerAgentId: z.string().nullable(),
+  ownerUserName: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type Contract = z.infer<typeof ContractSchema>;
+
+export const ContractVersionSchema = z.object({
+  id: z.string(),
+  contractId: z.string(),
   version: z.number().int(),
   contentSha256: z.string(),
   content: z.string().nullable(), // null when content exceeded the 64KB cap
   updatedBy: z.string(),
-  updatedAt: z.string(),
+  createdAt: z.string(),
 });
-export type Contract = z.infer<typeof ContractSchema>;
+export type ContractVersion = z.infer<typeof ContractVersionSchema>;
+
+export const ConsumerSchema = z.object({
+  id: z.string(),
+  contractId: z.string(),
+  path: z.string(),
+  agentId: z.string().nullable(),
+  declared: z.boolean(),
+  createdAt: z.string(),
+});
+export type Consumer = z.infer<typeof ConsumerSchema>;
 
 export const QuestionSchema = z.object({
   id: z.string(),
@@ -63,7 +85,8 @@ export const EventPayloadSchema = z.discriminatedUnion("type", [
     statusText: z.string(),
     claims: z.array(z.string()),
   }),
-  z.object({ type: z.literal("contract_published"), contract: ContractSchema }),
+  z.object({ type: z.literal("contract_published"), contract: ContractSchema, version: ContractVersionSchema }),
+  z.object({ type: z.literal("consumer_declared"), consumer: ConsumerSchema }),
   z.object({ type: z.literal("question_asked"), question: QuestionSchema }),
   z.object({ type: z.literal("question_answered"), answer: AnswerSchema, question: QuestionSchema }),
   z.object({ type: z.literal("finding_published"), finding: FindingSchema }),
