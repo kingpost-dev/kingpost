@@ -43,4 +43,12 @@ describe("findConsumedContracts", () => {
   it("returns multiple matches", () => {
     expect(findConsumedContracts(["contracts/a", "contracts/b"], ["contracts/a.ts", "contracts/b.ts", "contracts/c.ts"])).toEqual(["contracts/a.ts", "contracts/b.ts"]);
   });
+
+  it("matches when the resolved import has an extension but the registered path does not", () => {
+    expect(findConsumedContracts(["contracts/schema.ts"], ["contracts/schema"])).toEqual(["contracts/schema"]);
+  });
+
+  it("strips a .d.ts extension fully, not just its trailing .ts", () => {
+    expect(findConsumedContracts(["contracts/types"], ["contracts/types.d.ts"])).toEqual(["contracts/types.d.ts"]);
+  });
 });
