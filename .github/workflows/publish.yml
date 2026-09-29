@@ -64,6 +64,8 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.check.outputs.published == 'true'
+        run: npm run build --workspace=packages/protocol
+      - if: steps.check.outputs.published == 'true'
         run: npm run build --workspace=packages/cli
       - if: steps.check.outputs.published == 'true'
         run: npm test
