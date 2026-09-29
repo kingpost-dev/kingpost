@@ -1,4 +1,6 @@
 export function detectFormat(path: string, content: string): "json-schema" | "openapi" | "drizzle" | "unknown" {
+  // .ts files are never valid JSON, so this must run before the JSON.parse attempt below —
+  // that block's catch already returns "unknown" first otherwise, making this dead code.
   if (/\bpgTable\s*\(/.test(content)) return "drizzle";
 
   let parsed: unknown;

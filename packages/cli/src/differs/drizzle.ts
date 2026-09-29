@@ -5,7 +5,7 @@ import { parseDrizzleSchema, type DrizzleTable } from "./parse-drizzle-schema.js
  * `oldContent` to `newContent` is breaking.
  *
  * This wraps `parseDrizzleSchema` (this package's own ts-morph-based parser, not a
- * third-party diffing library) and applies the roadmap's breaking-change rules by
+ * third-party diffing library) and applies this differ's breaking-change rules by
  * comparing the two parsed table lists: a dropped table, a dropped column, a column's
  * `type` changing, and a column gaining `notNull: true` it didn't previously have are
  * all breaking. A newly added table/column and a column losing `notNull` (widening a
