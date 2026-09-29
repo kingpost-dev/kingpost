@@ -4,11 +4,15 @@ import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { readProjectConfig, getToken } from "../config.js";
 import { CLAUDE_HOOK_EVENTS, CODEX_HOOK_EVENTS, isKingpostClaudeHook, isKingpostCodexHook } from "./resolved-path-hooks.js";
+import { codexAppServerSocketPath } from "../codex-rpc.js";
 
 interface Check {
   label: string;
   ok: boolean;
   detail?: string;
+  // Best-effort/experimental checks whose absence is normal/expected, not a bug — rendered
+  // neutrally instead of as a ✓/✗ pass-fail.
+  informational?: boolean;
 }
 
 async function checkServer(serverUrl: string): Promise<Check> {
@@ -97,6 +101,22 @@ function checkCodexPluginSupport(): Check {
   }
 }
 
+// Experimental: `kingpost watch --harness codex` uses this daemon to deliver mid-task
+// notifications directly into a running Codex thread. Its absence is common (many installs
+// don't have it) and falls back gracefully to normal polling — so this is reported neutrally,
+// not as a failure.
+function checkCodexAppServerDaemon(): Check {
+  const available = existsSync(codexAppServerSocketPath());
+  return {
+    label: "Codex app-server daemon",
+    ok: true,
+    informational: true,
+    detail: available
+      ? "available for mid-task notifications"
+      : "not available — mid-task notifications will fall back to normal polling, this is expected on many installs",
+  };
+}
+
 function checkCodexPlugin(): Check {
   const cacheDir = join(homedir(), ".codex", "plugins", "cache", "kingpost");
   return existsSync(cacheDir)
@@ -147,8 +167,10 @@ export async function doctorCommand(cwd: string = process.cwd()): Promise<void> 
   checks.push(checkCodexPlugin());
   checks.push(checkCodexMcp());
   checks.push(checkCodexResolvedPathHooks(cwd));
+  checks.push(checkCodexAppServerDaemon());
 
   for (const c of checks) {
-    console.log(c.ok ? `✓ ${c.label}` : `✗ ${c.label}: ${c.detail}`);
+    if (c.informational) console.log(`ℹ ${c.label}: ${c.detail}`);
+    else console.log(c.ok ? `✓ ${c.label}` : `✗ ${c.label}: ${c.detail}`);
   }
 }

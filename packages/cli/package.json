@@ -1,21 +1,27 @@
 {
   "name": "kingpost",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
-  "bin": { "kingpost": "dist/index.js" },
-  "files": ["dist"],
+  "bin": {
+    "kingpost": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --target node22 --shims --clean",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
     "@kingpost/protocol": "^0.1.0",
-    "commander": "^12.1.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "commander": "^12.1.0",
+    "ws": "^8.22.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "tsup": "^8.3.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"

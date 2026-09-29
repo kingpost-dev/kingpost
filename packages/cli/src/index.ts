@@ -7,6 +7,7 @@ import { hookCommand } from "./commands/hook.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { inboxCommand } from "./commands/inbox.js";
+import { watchCommand } from "./commands/watch.js";
 import { HarnessSchema } from "@kingpost/protocol";
 
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
@@ -50,6 +51,13 @@ program
   .requiredOption("--name <name>", "your name, used as the answer author")
   .action(async (opts) => {
     await inboxCommand({ userName: opts.name });
+  });
+
+program
+  .command("watch")
+  .requiredOption("--harness <harness>", "claude or codex")
+  .action(async (opts) => {
+    await watchCommand({ harness: HarnessSchema.parse(opts.harness) });
   });
 
 program.parseAsync(process.argv);

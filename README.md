@@ -48,6 +48,8 @@ Once joined, your agent's session automatically gets a brief at start and update
 - `kingpost_finding` — publish a note or gotcha for the team
 - `kingpost_brief` — get the brief again on demand
 
+Before starting a long, heads-down task, an agent can run `kingpost watch --harness <claude|codex>` in the background to get interrupted mid-task if a teammate asks it something — instead of only finding out at its next tool call. For Claude Code this surfaces via a background-task notification; for Codex it's best-effort and depends on an experimental daemon (`kingpost doctor` reports whether it's available) that falls back to normal polling when absent.
+
 ## Troubleshooting
 
 Run `kingpost doctor` first — it checks your config, credentials, server connectivity, agent registration, and whether the plugin (and, for Codex, the MCP server) is actually installed, with a one-line fix for whatever's wrong.
