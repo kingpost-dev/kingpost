@@ -9,8 +9,17 @@ import { Project, SyntaxKind } from "ts-morph";
  *
  * Empirically consistent with parse-drizzle-schema.ts's ts-morph usage: `Project` and
  * `createSourceFile` don't throw on malformed input for this usage pattern (fresh Project per
- * call, one createSourceFile call) — garbled content just yields an AST with no matching import
- * nodes, so no try/catch is needed for the "unparseable → []" fallback.
+ * call, one createSourceFile call) — garbled content typically yields an AST with no matching
+ * import nodes, so no try/catch is needed for the "unparseable → []" fallback (a partially-
+ * malformed file whose error-recovery parse still contains a recognizable import fragment can
+ * still surface that fragment's specifier — "malformed → []" isn't a universal guarantee, just
+ * the common case).
+ *
+ * Known scope limits: only ES module syntax is recognized — CommonJS `require("./x")` calls are
+ * invisible to this function, as are type-position dynamic imports (`type X =
+ * import("./foo").X`, an `ImportTypeNode`, not a `CallExpression`). Returned specifiers are not
+ * deduplicated and are grouped by declaration kind (imports, then re-exports, then dynamic
+ * imports), not source order.
  */
 export function extractRelativeImports(content: string): string[] {
   const project = new Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true } });
