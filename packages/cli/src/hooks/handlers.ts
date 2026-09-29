@@ -6,6 +6,9 @@ import { ApiClient } from "../api.js";
 import { renderBrief, deltaIsEmpty, claimsOverlap, type Harness, type Delta } from "@kingpost/protocol";
 import type { HookInput } from "./parse.js";
 import { TEAMMATE_LABEL, renderDeltaLines } from "../delta-format.js";
+import { detectFormat } from "../differs/detect-format.js";
+import { diffJsonSchema } from "../differs/json-schema.js";
+import { diffOpenApi } from "../differs/openapi.js";
 
 function isContractPath(path: string | undefined): boolean {
   return !!path && path.startsWith("contracts/");
@@ -114,7 +117,30 @@ export async function handlePostToolUse(input: HookInput): Promise<string> {
     const fullPath = join(input.cwd, input.filePath);
     const content = readFileSync(fullPath, "utf8");
     const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? "unknown";
-    await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName });
+    const format = detectFormat(input.filePath, content);
+
+    let breaking = false;
+    let diffSummary: string | undefined;
+    if (format === "json-schema" || format === "openapi") {
+      try {
+        const { contracts } = await ctx.client.listContracts();
+        const existing = contracts.find((c) => c.path === input.filePath);
+        if (existing) {
+          const { versions } = await ctx.client.getContract(existing.id);
+          const previousContent = versions[0]?.content;
+          if (previousContent) {
+            const result = format === "json-schema" ? diffJsonSchema(previousContent, content) : await diffOpenApi(previousContent, content);
+            breaking = result.breaking;
+            diffSummary = result.summary;
+          }
+        }
+      } catch {
+        // Never let a failed lookup block the publish — same posture as every other
+        // non-critical network call in this hook.
+      }
+    }
+
+    await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName, format, breaking, diffSummary });
   }
 
   return "";

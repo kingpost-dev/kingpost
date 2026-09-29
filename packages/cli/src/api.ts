@@ -33,7 +33,7 @@ export class ApiClient {
     return this.request<{ delta: Delta; cursor: number }>(`/events/agents/${agentId}/delta`, { method: "GET" });
   }
 
-  publishContract(body: { path: string; content: string; updatedBy: string; format?: string }) {
+  publishContract(body: { path: string; content: string; updatedBy: string; format?: string; breaking?: boolean; diffSummary?: string }) {
     return this.request<{ contract: Contract; version: ContractVersion; changed: boolean }>("/contracts", { method: "PUT", body: JSON.stringify(body) });
   }
 

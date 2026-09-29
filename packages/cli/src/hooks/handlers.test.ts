@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { writeProjectConfig, writeCredential, readProjectConfig } from "../config.js";
 import { handleSessionStart, handlePreToolUse, handlePostToolUse } from "./handlers.js";
 import * as apiModule from "../api.js";
+import { diffJsonSchema } from "../differs/json-schema.js";
 
 // node:fs's own exports aren't configurable, so `vi.spyOn(fs, "readFileSync")` throws
 // ("Cannot redefine property"). Mocking the module (spreading the real implementation, only
@@ -142,5 +143,84 @@ describe("handlePostToolUse — contract path", () => {
     // with separator-free inputs.
     expect(readSpy).toHaveBeenCalledWith(join(cwd, "contracts/v1/api.ts"), "utf8");
     expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/v1/api.ts" }));
+  });
+});
+
+describe("handlePostToolUse — breaking-change detection", () => {
+  // Same fixture as differs/json-schema.test.ts's "flags a newly-required field as breaking"
+  // case — confirmed there to make diffJsonSchema throw (breaking: true).
+  const previousSchema = JSON.stringify({ type: "object", properties: { name: { type: "string" } }, required: ["name"] });
+  const nextSchema = JSON.stringify({
+    type: "object",
+    properties: { name: { type: "string" }, age: { type: "number" } },
+    required: ["name", "age"],
+  });
+
+  it("diffs against the previous version and passes real breaking/diffSummary to publishContract", async () => {
+    const expected = diffJsonSchema(previousSchema, nextSchema);
+    expect(expected.breaking).toBe(true); // sanity-check the fixture actually triggers a breaking diff
+
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-breaking-"));
+    mkdirSync(join(cwd, "contracts"), { recursive: true });
+    writeFileSync(join(cwd, "contracts/schema.json"), nextSchema);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "contract_1", path: "contracts/schema.json" } as any],
+    });
+    vi.spyOn(apiModule.ApiClient.prototype, "getContract").mockResolvedValue({
+      contract: {} as any,
+      versions: [{ content: previousSchema } as any],
+    });
+    const publishSpy = vi
+      .spyOn(apiModule.ApiClient.prototype, "publishContract")
+      .mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/schema.json" });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "contracts/schema.json", format: "json-schema", breaking: true, diffSummary: expected.summary })
+    );
+  });
+
+  it("skips diffing and reports non-breaking when no previous version exists", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-nofirst-"));
+    mkdirSync(join(cwd, "contracts"), { recursive: true });
+    writeFileSync(join(cwd, "contracts/schema.json"), nextSchema);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({ contracts: [] });
+    const getContractSpy = vi.spyOn(apiModule.ApiClient.prototype, "getContract");
+    const publishSpy = vi
+      .spyOn(apiModule.ApiClient.prototype, "publishContract")
+      .mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/schema.json" });
+
+    expect(getContractSpy).not.toHaveBeenCalled();
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "contracts/schema.json", format: "json-schema", breaking: false, diffSummary: undefined })
+    );
+  });
+
+  it("treats a failed listContracts lookup as no previous version, without blocking the publish", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-lookupfail-"));
+    mkdirSync(join(cwd, "contracts"), { recursive: true });
+    writeFileSync(join(cwd, "contracts/schema.json"), nextSchema);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockRejectedValue(new Error("network error"));
+    const publishSpy = vi
+      .spyOn(apiModule.ApiClient.prototype, "publishContract")
+      .mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/schema.json" });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "contracts/schema.json", format: "json-schema", breaking: false, diffSummary: undefined })
+    );
   });
 });
