@@ -45,3 +45,57 @@ describe("kingpost_who", () => {
     expect(result.content[0].text).toContain("kingpost error");
   });
 });
+
+describe("kingpost_contracts", () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "kp-mcp-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [
+        { id: "c1", path: "contracts/api.ts", format: "typescript", currentVersion: 3, ownerAgentId: "agent_2", ownerUserName: "sam", createdAt: "" },
+      ],
+    } as any);
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      cursor: 0,
+    });
+  });
+
+  it("lists contracts with path, version, and owner", async () => {
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_contracts"];
+    if (!tool) throw new Error("Could not find kingpost_contracts's registered callback on the McpServer instance.");
+    const result = await tool.handler({}, {});
+    expect(result.content[0].text).toContain("contracts/api.ts");
+    expect(result.content[0].text).toContain("v3");
+    expect(result.content[0].text).toContain("sam");
+  });
+});
+
+describe("kingpost_consume", () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "kp-mcp-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      cursor: 0,
+    });
+  });
+
+  it("declares a consumer with the contract id, path, and calling agent id", async () => {
+    const declareSpy = vi.spyOn(apiModule.ApiClient.prototype, "declareConsumer").mockResolvedValue({ consumer: {} as any });
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_consume"];
+    if (!tool) throw new Error("Could not find kingpost_consume's registered callback on the McpServer instance.");
+    const result = await tool.handler({ contractId: "c1", path: "ui/App.tsx" }, {});
+    expect(declareSpy).toHaveBeenCalledWith("c1", { path: "ui/App.tsx", agentId: "agent_1" });
+    expect(result.content[0].text).toContain("ui/App.tsx");
+    expect(result.content[0].text).toContain("c1");
+  });
+});

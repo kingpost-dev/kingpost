@@ -101,7 +101,7 @@ describe("handlePostToolUse — contract path", () => {
     writeFileSync(join(cwd, "contracts/api.ts"), "export type X = 1;");
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
-    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, changed: true });
+    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
 
     await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/api.ts" });
 
@@ -117,7 +117,7 @@ describe("handlePostToolUse — contract path", () => {
     writeFileSync(join(cwd, "contracts", "v1", "api.ts"), "export type Y = 2;");
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
-    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, changed: true });
+    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
 
     await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/v1/api.ts" });
 
@@ -130,7 +130,7 @@ describe("handlePostToolUse — contract path", () => {
     writeFileSync(join(cwd, "contracts/v1/api.ts"), "export type X = 1;");
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
-    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, changed: true });
+    const publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
     const readSpy = vi.mocked(readFileSync);
 
     await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/v1/api.ts" });

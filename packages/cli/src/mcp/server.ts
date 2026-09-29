@@ -109,6 +109,65 @@ export function buildMcpServer(cwd: string) {
     }
   );
 
+  server.tool("kingpost_contracts", "List registered contracts with their current owner and version.", {}, async () => {
+    try {
+      const { client, agentId } = ctx();
+      const { contracts } = await client.listContracts();
+      const text = contracts.length === 0
+        ? "No contracts registered yet."
+        : contracts.map((c) => `[${c.id}] ${c.path} v${c.currentVersion} (${c.format}) — owner: ${c.ownerUserName ?? "unowned"}`).join("\n");
+      const suffix = await renderDeltaSuffix(client, agentId);
+      return { content: [{ type: "text" as const, text: text + suffix }] };
+    } catch (e) {
+      return errorResult(e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  server.tool("kingpost_contract", "Get one contract's details and version history by id (from kingpost_contracts).", { id: z.string() }, async ({ id }) => {
+    try {
+      const { client, agentId } = ctx();
+      const { contract, versions } = await client.getContract(id);
+      const header = `${contract.path} (${contract.format}) — owner: ${contract.ownerUserName ?? "unowned"}, current v${contract.currentVersion}`;
+      const history = versions.map((v) => `- v${v.version} by ${v.updatedBy} at ${v.createdAt}`).join("\n");
+      const suffix = await renderDeltaSuffix(client, agentId);
+      return { content: [{ type: "text" as const, text: `${header}\n${history}${suffix}` }] };
+    } catch (e) {
+      return errorResult(e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  server.tool(
+    "kingpost_consume",
+    "Declare that a file you're working on depends on (consumes) a registered contract, by the contract's id.",
+    { contractId: z.string(), path: z.string() },
+    async ({ contractId, path }) => {
+      try {
+        const { client, agentId } = ctx();
+        await client.declareConsumer(contractId, { path, agentId });
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return { content: [{ type: "text" as const, text: `Registered ${path} as a consumer of [${contractId}].${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
+  server.tool(
+    "kingpost_transfer",
+    "Transfer ownership of a contract to a different user (by their name, from kingpost_who).",
+    { contractId: z.string(), toUserName: z.string() },
+    async ({ contractId, toUserName }) => {
+      try {
+        const { client, agentId } = ctx();
+        await client.transferContract(contractId, toUserName);
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return { content: [{ type: "text" as const, text: `Ownership of [${contractId}] transferred to ${toUserName}.${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
   server.tool("kingpost_brief", "Get the same brief you got at session start.", {}, async () => {
     try {
       const { client, agentId } = ctx();

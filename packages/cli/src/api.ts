@@ -1,4 +1,4 @@
-import type { Agent, Contract, Question, Answer, Finding, Delta } from "@kingpost/protocol";
+import type { Agent, Contract, ContractVersion, Consumer, Question, Answer, Finding, Delta } from "@kingpost/protocol";
 
 const TIMEOUT_MS = 1500;
 
@@ -33,8 +33,8 @@ export class ApiClient {
     return this.request<{ delta: Delta; cursor: number }>(`/events/agents/${agentId}/delta`, { method: "GET" });
   }
 
-  publishContract(body: { path: string; content: string; updatedBy: string }) {
-    return this.request<{ contract: Contract; changed: boolean }>("/contracts", { method: "PUT", body: JSON.stringify(body) });
+  publishContract(body: { path: string; content: string; updatedBy: string; format?: string }) {
+    return this.request<{ contract: Contract; version: ContractVersion; changed: boolean }>("/contracts", { method: "PUT", body: JSON.stringify(body) });
   }
 
   askQuestion(body: { fromAgentId: string; toAgentId: string | null; text: string }) {
@@ -63,6 +63,18 @@ export class ApiClient {
 
   listContracts() {
     return this.request<{ contracts: Contract[] }>("/contracts", { method: "GET" });
+  }
+
+  getContract(id: string) {
+    return this.request<{ contract: Contract; versions: ContractVersion[] }>(`/contracts/${id}`, { method: "GET" });
+  }
+
+  declareConsumer(contractId: string, body: { path: string; agentId: string }) {
+    return this.request<{ consumer: Consumer }>(`/contracts/${contractId}/consumers`, { method: "POST", body: JSON.stringify(body) });
+  }
+
+  transferContract(id: string, toUserName: string) {
+    return this.request<{ contract: Contract }>(`/contracts/${id}/transfer`, { method: "POST", body: JSON.stringify({ toUserName }) });
   }
 }
 

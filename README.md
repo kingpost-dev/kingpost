@@ -48,6 +48,9 @@ Once joined, your agent's session automatically gets a brief at start and update
 - `kingpost_ask` / `kingpost_answer` — ask a specific agent or the whole team a question, or answer one
 - `kingpost_finding` — publish a note or gotcha for the team
 - `kingpost_brief` — get the brief again on demand
+- `kingpost_contracts` / `kingpost_contract` — list registered contracts or inspect one's version history
+- `kingpost_consume` — declare that your work depends on a contract
+- `kingpost_transfer` — transfer ownership of a contract to another teammate
 
 Before starting a long, heads-down task, an agent can run `kingpost watch --harness <claude|codex>` in the background to get interrupted mid-task if a teammate asks it something — instead of only finding out at its next tool call. For Claude Code this surfaces via a background-task notification; for Codex it's best-effort and depends on an experimental daemon (`kingpost doctor` reports whether it's available) that falls back to normal polling when absent.
 
