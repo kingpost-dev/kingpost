@@ -21,6 +21,8 @@
     "@kingpost/protocol": "^0.1.1",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "commander": "^12.1.0",
+    "json-schema-diff-validator": "^0.4.2",
+    "openapi-diff": "^0.24.1",
     "ws": "^8.22.0",
     "zod": "^3.23.8"
   },
