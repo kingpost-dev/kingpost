@@ -3,6 +3,10 @@
   "version": "0.3.0",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kingpost-dev/kingpost.git"
+  },
   "bin": {
     "kingpost": "dist/index.js"
   },
