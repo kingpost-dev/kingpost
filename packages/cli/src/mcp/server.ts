@@ -6,6 +6,7 @@ import { ApiClient } from "../api.js";
 import { renderBrief } from "@kingpost/protocol";
 import { TEAMMATE_LABEL, renderDeltaLines } from "../delta-format.js";
 import { scanRepo } from "../scan/scan-repo.js";
+import { formatAgentLine } from "../ownership.js";
 
 function errorResult(message: string) {
   return { content: [{ type: "text" as const, text: `kingpost error: ${message}` }], isError: true };
@@ -47,14 +48,14 @@ export function buildMcpServer(cwd: string) {
     }
   );
 
-  server.tool("kingpost_who", "List teammates' agents and what they're doing.", {}, async () => {
+  server.tool("kingpost_who", "List teammates' agents and what they're doing, including which registered contracts each one owns.", {}, async () => {
     try {
       const { client, agentId } = ctx();
-      const { agents } = await client.listAgents();
+      const [{ agents }, { contracts }] = await Promise.all([client.listAgents(), client.listContracts()]);
       const others = agents.filter((a) => a.id !== agentId);
       const text = others.length === 0
         ? "No other agents active."
-        : others.map((a) => `${a.userName} [${a.harness}] (id: ${a.id}): ${a.statusText || "idle"} (claims: ${a.claims.join(", ") || "none"})`).join("\n");
+        : others.map((a) => formatAgentLine(a, contracts)).join("\n");
       const suffix = await renderDeltaSuffix(client, agentId);
       return { content: [{ type: "text" as const, text: text + suffix }] };
     } catch (e) {

@@ -17,6 +17,9 @@ describe("kingpost_who", () => {
     vi.spyOn(apiModule.ApiClient.prototype, "listAgents").mockResolvedValue({
       agents: [{ id: "agent_2", userName: "sam", harness: "codex", claims: ["ui/*"], statusText: "styling", lastSeen: "", cursor: 0, projectId: "proj_1", cwd: "/x" }],
     } as any);
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "c1", path: "contracts/api.ts", format: "typescript", currentVersion: 1, ownerAgentId: "agent_2", ownerUserName: "sam", createdAt: "" }],
+    } as any);
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
       delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
       cursor: 0,
@@ -34,6 +37,14 @@ describe("kingpost_who", () => {
     const result = await tool.handler({}, {});
     expect(result.content[0].text).toContain("sam");
     expect(result.content[0].text).toContain("agent_2");
+  });
+
+  it("lists which contracts each agent owns", async () => {
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_who"];
+    if (!tool) throw new Error("Could not find kingpost_who's registered callback on the McpServer instance.");
+    const result = await tool.handler({}, {});
+    expect(result.content[0].text).toContain("(owns: contracts/api.ts)");
   });
 
   it("returns a readable error instead of throwing when unregistered", async () => {
