@@ -10,9 +10,39 @@ import { detectFormat } from "../differs/detect-format.js";
 import { diffJsonSchema } from "../differs/json-schema.js";
 import { diffOpenApi } from "../differs/openapi.js";
 import { diffDrizzle } from "../differs/drizzle.js";
+import { extractRelativeImports } from "../scan/extract-imports.js";
+import { resolveContractPaths, findConsumedContracts } from "../scan/match-contracts.js";
 
 function isContractPath(path: string | undefined): boolean {
   return !!path && path.startsWith("contracts/");
+}
+
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
+
+/** Extracts a source file's relative imports, resolves them against registered contracts, and
+ * declares this file as a consumer of any match — a "derived" consumer relationship (nobody
+ * explicitly asked for it, it's inferred from the import graph). Never let a network hiccup or a
+ * parse failure here block the hook's normal completion, same posture as detectBreakingChange. */
+async function scanForConsumedContracts(
+  client: ApiClient,
+  agentId: string,
+  filePath: string,
+  content: string
+): Promise<void> {
+  try {
+    const specifiers = extractRelativeImports(content);
+    if (specifiers.length === 0) return;
+    const resolved = resolveContractPaths(filePath, specifiers);
+    const { contracts } = await client.listContracts();
+    const consumed = findConsumedContracts(resolved, contracts.map((c) => c.path));
+    if (consumed.length === 0) return;
+    for (const contractPath of consumed) {
+      const contract = contracts.find((c) => c.path === contractPath);
+      if (contract) await client.declareConsumer(contract.id, { path: filePath, agentId, declared: false });
+    }
+  } catch {
+    // Never let a failed scan block the hook — same posture as detectBreakingChange.
+  }
 }
 
 // hook.ts's shared HANDLER_TIMEOUT_MS budget (3000ms) now has to cover up to 3 sequential
@@ -153,13 +183,21 @@ export async function handlePostToolUse(input: HookInput): Promise<string> {
   const claims = Array.from(new Set([...(config.claims ?? []), input.filePath]));
   writeProjectConfig(input.cwd, { ...ctx.config, claims });
 
-  if (isContractPath(input.filePath)) {
+  const isContract = isContractPath(input.filePath);
+  const isSourceFile = SOURCE_EXTENSIONS.some((ext) => input.filePath!.endsWith(ext));
+
+  if (isContract || isSourceFile) {
     const fullPath = join(input.cwd, input.filePath);
     const content = readFileSync(fullPath, "utf8");
-    const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? "unknown";
-    const format = detectFormat(input.filePath, content);
-    const { breaking, diffSummary } = await detectBreakingChange(ctx.client, input.filePath, format, content);
-    await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName, format, breaking, diffSummary });
+
+    if (isContract) {
+      const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? "unknown";
+      const format = detectFormat(input.filePath, content);
+      const { breaking, diffSummary } = await detectBreakingChange(ctx.client, input.filePath, format, content);
+      await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName, format, breaking, diffSummary });
+    } else {
+      await scanForConsumedContracts(ctx.client, ctx.agentId, input.filePath, content);
+    }
   }
 
   return "";

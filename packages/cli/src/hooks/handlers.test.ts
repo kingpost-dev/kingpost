@@ -300,3 +300,95 @@ describe("handlePostToolUse — breaking-change detection", () => {
     expect(expected.summary).toContain("dropped");
   });
 });
+
+describe("handlePostToolUse — derived consumer scanning", () => {
+  it("declares a derived consumer when a source file's relative import resolves to a registered contract", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-consumer-"));
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src/consumer.ts"), `import { X } from "../contracts/api";\n`);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "contract_1", path: "contracts/api.ts" } as any],
+    });
+    const declareSpy = vi.spyOn(apiModule.ApiClient.prototype, "declareConsumer").mockResolvedValue({ consumer: {} as any });
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "src/consumer.ts" });
+
+    expect(declareSpy).toHaveBeenCalledWith("contract_1", { path: "src/consumer.ts", agentId: "agent_1", declared: false });
+  });
+
+  it("does not declare a consumer when the file has no relative imports (skips listContracts entirely)", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-noimports-"));
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src/consumer.ts"), `import { z } from "zod";\n`);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    const listSpy = vi.spyOn(apiModule.ApiClient.prototype, "listContracts");
+    const declareSpy = vi.spyOn(apiModule.ApiClient.prototype, "declareConsumer");
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "src/consumer.ts" });
+
+    expect(listSpy).not.toHaveBeenCalled();
+    expect(declareSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not declare a consumer when relative imports don't match any registered contract", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-nomatch-"));
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src/consumer.ts"), `import { helper } from "./helpers";\n`);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "contract_1", path: "contracts/api.ts" } as any],
+    });
+    const declareSpy = vi.spyOn(apiModule.ApiClient.prototype, "declareConsumer");
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "src/consumer.ts" });
+
+    expect(declareSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression guard: the two branches (contract-publish vs. consumer-scan) must stay mutually
+  // exclusive. This contract file's own content imports a path that WOULD match a registered
+  // contract if the scan ran on it — proving the scan is skipped because of the isContractPath
+  // branch, not because the import happened not to resolve to anything.
+  it("does not run the consumer scan when the edited file is itself under contracts/", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-contract-noscan-"));
+    mkdirSync(join(cwd, "contracts"), { recursive: true });
+    writeFileSync(join(cwd, "contracts/api.ts"), `import { Y } from "../src/other";\nexport type X = 1;`);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "contract_1", path: "src/other.ts" } as any],
+    });
+    vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({ contract: {} as any, version: {} as any, changed: true });
+    const declareSpy = vi.spyOn(apiModule.ApiClient.prototype, "declareConsumer");
+
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "contracts/api.ts" });
+
+    expect(declareSpy).not.toHaveBeenCalled();
+  });
+
+  it("swallows a listContracts failure during the consumer scan without throwing or blocking the hook", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kp-hook-post-scanfail-"));
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src/consumer.ts"), `import { X } from "../contracts/api";\n`);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+
+    vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockRejectedValue(new Error("network error"));
+    const declareSpy = vi.spyOn(apiModule.ApiClient.prototype, "declareConsumer");
+
+    const out = await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, filePath: "src/consumer.ts" });
+
+    expect(out).toBe("");
+    expect(declareSpy).not.toHaveBeenCalled();
+    const config = readProjectConfig(cwd);
+    expect(config?.claims).toContain("src/consumer.ts");
+  });
+});
