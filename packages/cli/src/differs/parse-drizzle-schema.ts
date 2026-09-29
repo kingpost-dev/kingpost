@@ -45,20 +45,29 @@ function parseColumn(expr: CallExpression): DrizzleColumn | null {
   };
 }
 
+/**
+ * Parses a Drizzle ORM schema file's source text and extracts table/column definitions.
+ *
+ * Handles the real Drizzle syntax used by kingpost-cloud's production schema: a
+ * `pgTable(tableName, columnsObject, extraConfig?)` call where each column is a chained
+ * builder expression, e.g. `text("col_name").notNull().primaryKey()`. Verified empirically
+ * against kingpost-cloud's schema.ts, including `text`, `boolean`, `timestamp`, `bigserial`
+ * (e.g. `bigserial("id", { mode: "number" }).primaryKey()`), `integer`, and `jsonb` columns.
+ *
+ * Only `pgTable` (Postgres) is recognized, not `mysqlTable`/`sqliteTable`. Only the column
+ * builder's first string-literal argument (the column name) and its chained method names are
+ * inspected; any options-object second argument (e.g. `{ mode: "number" }`, `{ withTimezone:
+ * true }`) is intentionally ignored.
+ *
+ * Empirically verified: neither `new Project({ useInMemoryFileSystem: true, ... })` nor
+ * `project.createSourceFile(...)` throws for this function's usage pattern (fresh `Project`
+ * per call, single `createSourceFile` call). Garbled/invalid TypeScript just produces a
+ * best-effort AST with zero matching `pgTable` calls, which is why returning an empty array
+ * for unparseable content works without needing any try/catch here.
+ */
 export function parseDrizzleSchema(content: string): DrizzleTable[] {
-  let project: Project;
-  try {
-    project = new Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true } });
-  } catch {
-    return [];
-  }
-
-  let sourceFile;
-  try {
-    sourceFile = project.createSourceFile("schema.ts", content);
-  } catch {
-    return [];
-  }
+  const project = new Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true } });
+  const sourceFile = project.createSourceFile("schema.ts", content);
 
   const tables: DrizzleTable[] = [];
   const calls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression);

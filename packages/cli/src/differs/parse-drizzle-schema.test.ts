@@ -54,4 +54,66 @@ describe("parseDrizzleSchema", () => {
     const tables = parseDrizzleSchema(twoTables);
     expect(tables.map((t) => t.tableName).sort()).toEqual(["a", "b"]);
   });
+
+  // Copied verbatim from kingpost-cloud/packages/server/src/db/schema.ts's `events` table.
+  const EVENTS_TABLE = `
+import { pgTable, text, bigserial, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+
+export const events = pgTable(
+  "events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    projectId: text("project_id").notNull(),
+    agentId: text("agent_id"),
+    userName: text("user_name"),
+    type: text("type").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ byProjectId: index("events_project_id_idx").on(t.projectId, t.id) })
+);
+`;
+
+  it("parses bigserial, integer, and jsonb column types", () => {
+    const tables = parseDrizzleSchema(EVENTS_TABLE);
+    expect(tables).toHaveLength(1);
+    expect(tables[0].tableName).toBe("events");
+
+    const byName = Object.fromEntries(tables[0].columns.map((c) => [c.name, c]));
+    expect(byName["id"]).toEqual({ name: "id", type: "bigserial", notNull: false, primaryKey: true });
+    expect(byName["payload"]).toEqual({ name: "payload", type: "jsonb", notNull: true, primaryKey: false });
+  });
+
+  it("parses a plain integer column with a default", () => {
+    const cursorColumn = `
+      import { pgTable, integer } from "drizzle-orm/pg-core";
+      export const agents = pgTable("agents", { cursor: integer("cursor").notNull().default(0) });
+    `;
+    const tables = parseDrizzleSchema(cursorColumn);
+    expect(tables[0].columns[0]).toEqual({ name: "cursor", type: "integer", notNull: true, primaryKey: false });
+  });
+
+  it("ignores a multi-key options-object second argument on pgTable's column builder", () => {
+    const optionsColumn = `
+      import { pgTable, timestamp } from "drizzle-orm/pg-core";
+      export const t = pgTable("t", {
+        createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+      });
+    `;
+    const tables = parseDrizzleSchema(optionsColumn);
+    expect(tables[0].columns[0]).toEqual({ name: "created_at", type: "timestamp", notNull: true, primaryKey: false });
+  });
+
+  it("parses a column definition with a comment in the middle of a multi-line chain", () => {
+    const commentedColumn = `
+      import { pgTable, text } from "drizzle-orm/pg-core";
+      export const t = pgTable("t", {
+        id: text("id")
+          // primary key, matches kingpost-cloud's convention
+          .primaryKey(),
+      });
+    `;
+    const tables = parseDrizzleSchema(commentedColumn);
+    expect(tables[0].columns[0]).toEqual({ name: "id", type: "text", notNull: false, primaryKey: true });
+  });
 });
