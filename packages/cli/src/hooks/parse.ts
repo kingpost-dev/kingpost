@@ -60,9 +60,20 @@ function extractApplyPatchFilePath(command: string): string | undefined {
 // version. Write gives the full new content directly. Edit requires reading the CURRENT file and
 // substituting old_string -> new_string; if the file can't be read or old_string isn't found,
 // returns undefined rather than throwing or guessing — a caller that can't determine what's
-// being proposed should fail open (don't block), not fail closed on a wrong guess. Any other
-// tool (including Codex's apply_patch, whose patch envelope this function does not parse) also
-// returns undefined — a documented, accepted scope limit, not a bug.
+// being proposed should fail open (don't block), not fail closed on a wrong guess.
+//
+// Known limitation: only Write/Edit are handled. Codex's apply_patch (whose patch envelope this
+// function does not parse — real patch application is a distinct, nontrivial feature) and any
+// other tool always return undefined here. Accepted for now, same posture as this file's other
+// documented scope limits above.
+//
+// This is the first place this otherwise-pure parsing module touches disk, and the read below
+// is synchronous with no timeout — same posture as handlePostToolUse's own readFileSync in
+// handlers.ts (that one isn't actually timeout-protected either, despite living inside an async
+// handler raced against HANDLER_TIMEOUT_MS: a synchronous call blocks the event loop, so no
+// Promise.race can preempt it once it starts). Both call sites accept this because the file
+// being read is always the one the agent itself just decided to edit — small, local, and warm
+// in the OS cache in the overwhelmingly common case.
 function computeProposedContent(toolName: string | undefined, toolInput: Record<string, unknown> | undefined): string | undefined {
   if (!toolInput) return undefined;
   if (toolName === "Write" && typeof toolInput.content === "string") {

@@ -199,7 +199,6 @@ describe("parseHookInput proposedContent", () => {
       tool_name: "Edit",
       tool_input: { file_path: filePath, old_string: "old text", new_string: "new text" },
     });
-    expect(() => parseHookInput("claude", payload)).not.toThrow();
     expect(parseHookInput("claude", payload).proposedContent).toBeUndefined();
   });
 
