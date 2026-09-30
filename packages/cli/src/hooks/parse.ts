@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import * as path from "node:path";
 import type { Harness } from "@kingpost/protocol";
@@ -10,6 +11,7 @@ export interface HookInput {
   cwd: string;
   toolName?: string;
   filePath?: string;
+  proposedContent?: string;
 }
 
 // The pieces of node:path we need, narrowed so tests can inject `path.win32`/`path.posix`
@@ -53,6 +55,36 @@ function extractApplyPatchFilePath(command: string): string | undefined {
   return match ? match[1].trim() : undefined;
 }
 
+// Computes the file content a Write or Edit tool call is ABOUT to produce, before it happens —
+// used so PreToolUse can diff proposed-but-not-yet-written content against a contract's current
+// version. Write gives the full new content directly. Edit requires reading the CURRENT file and
+// substituting old_string -> new_string; if the file can't be read or old_string isn't found,
+// returns undefined rather than throwing or guessing — a caller that can't determine what's
+// being proposed should fail open (don't block), not fail closed on a wrong guess. Any other
+// tool (including Codex's apply_patch, whose patch envelope this function does not parse) also
+// returns undefined — a documented, accepted scope limit, not a bug.
+function computeProposedContent(toolName: string | undefined, toolInput: Record<string, unknown> | undefined): string | undefined {
+  if (!toolInput) return undefined;
+  if (toolName === "Write" && typeof toolInput.content === "string") {
+    return toolInput.content;
+  }
+  if (
+    toolName === "Edit" &&
+    typeof toolInput.file_path === "string" &&
+    typeof toolInput.old_string === "string" &&
+    typeof toolInput.new_string === "string"
+  ) {
+    try {
+      const current = readFileSync(toolInput.file_path, "utf8");
+      if (!current.includes(toolInput.old_string)) return undefined;
+      return current.replace(toolInput.old_string, toolInput.new_string);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 export function parseHookInput(harness: Harness, raw: string): HookInput {
   const json = JSON.parse(raw);
   const hookEventName = HookEventNameSchema.parse(json.hook_event_name);
@@ -61,7 +93,8 @@ export function parseHookInput(harness: Harness, raw: string): HookInput {
   const rawFilePath: string | undefined =
     toolName === "apply_patch" ? extractApplyPatchFilePath(json.tool_input?.command ?? "") : json.tool_input?.file_path;
   const filePath = toProjectRelative(cwd, rawFilePath);
-  return { harness, hookEventName, cwd, toolName, filePath };
+  const proposedContent = hookEventName === "PreToolUse" ? computeProposedContent(toolName, json.tool_input) : undefined;
+  return { harness, hookEventName, cwd, toolName, filePath, proposedContent };
 }
 
 export function renderHookOutput(hookEventName: HookInput["hookEventName"], additionalContext: string): string {

@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { parseHookInput, renderHookOutput, toProjectRelative } from "./parse.js";
 
@@ -150,6 +152,101 @@ describe("toProjectRelative cross-platform (path.win32 injected for determinism)
     expect(result).toBe("contracts/api.ts");
   });
 });
+
+describe("parseHookInput proposedContent", () => {
+  it("returns the new content directly for a Write tool call at PreToolUse", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/contracts/api.ts", content: "new file body" },
+    });
+    expect(parseHookInput("claude", payload).proposedContent).toBe("new file body");
+  });
+
+  it("substitutes old_string with new_string against the current file on disk for an Edit call", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "api.ts");
+    writeFileSync(filePath, "before\nold text\nafter\n");
+    const payload = JSON.stringify({
+      cwd: dir,
+      hook_event_name: "PreToolUse",
+      tool_name: "Edit",
+      tool_input: { file_path: filePath, old_string: "old text", new_string: "new text" },
+    });
+    expect(parseHookInput("claude", payload).proposedContent).toBe("before\nnew text\nafter\n");
+  });
+
+  it("returns undefined when old_string does not appear in the current file's content", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "api.ts");
+    writeFileSync(filePath, "before\nafter\n");
+    const payload = JSON.stringify({
+      cwd: dir,
+      hook_event_name: "PreToolUse",
+      tool_name: "Edit",
+      tool_input: { file_path: filePath, old_string: "not present", new_string: "new text" },
+    });
+    expect(parseHookInput("claude", payload).proposedContent).toBeUndefined();
+  });
+
+  it("returns undefined (does not throw) when the Edit's target file does not exist on disk", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "missing.ts");
+    const payload = JSON.stringify({
+      cwd: dir,
+      hook_event_name: "PreToolUse",
+      tool_name: "Edit",
+      tool_input: { file_path: filePath, old_string: "old text", new_string: "new text" },
+    });
+    expect(() => parseHookInput("claude", payload)).not.toThrow();
+    expect(parseHookInput("claude", payload).proposedContent).toBeUndefined();
+  });
+
+  it("leaves proposedContent undefined for a SessionStart event even with Write-shaped tool_input", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "SessionStart",
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/contracts/api.ts", content: "new file body" },
+    });
+    expect(parseHookInput("claude", payload).proposedContent).toBeUndefined();
+  });
+
+  it("leaves proposedContent undefined for a PostToolUse event even with Write-shaped tool_input", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/contracts/api.ts", content: "new file body" },
+    });
+    expect(parseHookInput("claude", payload).proposedContent).toBeUndefined();
+  });
+
+  it("leaves proposedContent undefined for a Codex apply_patch call at PreToolUse", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PreToolUse",
+      tool_name: "apply_patch",
+      tool_input: { command: "*** Begin Patch\n*** Update File: contracts/api.ts\n@@\n-old\n+new\n*** End Patch" },
+    });
+    expect(parseHookInput("codex", payload).proposedContent).toBeUndefined();
+  });
+
+  it("leaves proposedContent undefined for an unrecognized tool at PreToolUse", () => {
+    const payload = JSON.stringify({
+      cwd: "/repo",
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "sed -n '1,4p' contracts/api.ts" },
+    });
+    expect(parseHookInput("claude", payload).proposedContent).toBeUndefined();
+  });
+});
+
+function mktempFixtureDir(): string {
+  return mkdtempSync(path.join(tmpdir(), "kp-"));
+}
 
 describe("renderHookOutput", () => {
   it("wraps additionalContext in hookSpecificOutput for either harness", () => {
