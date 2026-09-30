@@ -3,9 +3,14 @@ import { extractRelativeImports } from "./extract-imports.js";
 
 // Longest-first: ".d.ts" must be checked before ".ts", or a declaration file would only have its
 // trailing ".ts" stripped (leaving a stray ".d" suffix) instead of the whole ".d.ts" extension.
-// .mjs/.cjs are intentionally out of scope for now — this project's own contract files are
-// exclusively .ts, add by demand if a real .mjs/.cjs contract case ever comes up.
-const SOURCE_EXTENSIONS = [".d.ts", ".ts", ".tsx", ".js", ".jsx"];
+// Despite the name, this isn't just "source file" extensions — it's every extension a
+// REGISTERED CONTRACT can have, since this list's whole job is stripping a contract path's
+// extension so it compares equal to an extensionless import. Contracts aren't exclusively .ts:
+// JSON Schema (.json) and YAML-format OpenAPI (.yaml/.yml) contracts are both real, supported
+// formats, and were silently never matched via a normal extensionless import before this fix —
+// found via a real end-to-end dogfood run (see V1.1e plan Task 6), not a hypothetical.
+// .mjs/.cjs are intentionally still out of scope — add by demand if a real case comes up.
+const SOURCE_EXTENSIONS = [".d.ts", ".ts", ".tsx", ".js", ".jsx", ".json", ".yaml", ".yml"];
 
 /** Strips a trailing source-file extension, if present, so "contracts/schema.ts" and
  * "contracts/schema" compare equal — imports are routinely written without an extension. */

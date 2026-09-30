@@ -51,6 +51,18 @@ describe("findConsumedContracts", () => {
   it("strips a .d.ts extension fully, not just its trailing .ts", () => {
     expect(findConsumedContracts(["contracts/types"], ["contracts/types.d.ts"])).toEqual(["contracts/types.d.ts"]);
   });
+
+  it("matches an extensionless import against a registered JSON Schema contract", () => {
+    // Regression test: a real end-to-end run found that an extensionless import of a .json
+    // contract silently never matched, since .json wasn't in the extension-stripping list —
+    // this is the single most common way a JSON Schema contract is actually referenced.
+    expect(findConsumedContracts(["contracts/user"], ["contracts/user.json"])).toEqual(["contracts/user.json"]);
+  });
+
+  it("matches an extensionless import against a registered YAML OpenAPI contract", () => {
+    expect(findConsumedContracts(["contracts/api"], ["contracts/api.yaml"])).toEqual(["contracts/api.yaml"]);
+    expect(findConsumedContracts(["contracts/api"], ["contracts/api.yml"])).toEqual(["contracts/api.yml"]);
+  });
 });
 
 describe("findConsumedContractIds", () => {
