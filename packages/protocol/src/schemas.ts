@@ -50,6 +50,20 @@ export const ConsumerSchema = z.object({
 });
 export type Consumer = z.infer<typeof ConsumerSchema>;
 
+export const ProposalStatusSchema = z.enum(["open", "accepted", "rejected"]);
+export type ProposalStatus = z.infer<typeof ProposalStatusSchema>;
+
+export const ProposalSchema = z.object({
+  id: z.string(),
+  contractId: z.string(),
+  proposedByAgentId: z.string(),
+  newContent: z.string(),
+  rationale: z.string(),
+  status: ProposalStatusSchema,
+  createdAt: z.string(),
+});
+export type Proposal = z.infer<typeof ProposalSchema>;
+
 export const QuestionSchema = z.object({
   id: z.string(),
   fromAgentId: z.string(),
@@ -92,6 +106,19 @@ export const EventPayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("question_asked"), question: QuestionSchema }),
   z.object({ type: z.literal("question_answered"), answer: AnswerSchema, question: QuestionSchema }),
   z.object({ type: z.literal("finding_published"), finding: FindingSchema }),
+  z.object({
+    type: z.literal("proposal_created"),
+    proposal: ProposalSchema,
+    contract: ContractSchema,
+    consumerUserNames: z.array(z.string()),
+  }),
+  z.object({
+    type: z.literal("proposal_accepted"),
+    proposal: ProposalSchema,
+    contract: ContractSchema,
+    version: ContractVersionSchema,
+    consumerUserNames: z.array(z.string()),
+  }),
 ]);
 export type EventPayload = z.infer<typeof EventPayloadSchema>;
 
