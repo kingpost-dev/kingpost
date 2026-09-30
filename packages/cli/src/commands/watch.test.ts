@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProjectConfig, writeCredential } from "../config.js";
 import { runWatch, pollForDelta, formatClaudeSummary, formatCodexMessage } from "./watch.js";
+import { emptyDelta } from "../test-helpers/empty-delta.js";
 import type { Delta } from "@kingpost/protocol";
 
 vi.mock("node:os", async (importOriginal) => {
@@ -16,18 +17,6 @@ function useTempHome(): string {
   const dir = mkdtempSync(join(tmpdir(), "kp-home-"));
   vi.mocked(os.homedir).mockReturnValue(dir);
   return dir;
-}
-
-function emptyDelta(): Delta {
-  return {
-    contractsChanged: [],
-    questionsForMe: [],
-    answersToMe: [],
-    findings: [],
-    overlappingClaims: [],
-    proposalsForMe: [],
-    proposalsAcceptedForMe: [],
-  };
 }
 
 function deltaWithQuestion(): Delta {

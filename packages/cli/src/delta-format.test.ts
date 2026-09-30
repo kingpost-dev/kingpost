@@ -1,18 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderDeltaLines } from "./delta-format.js";
-import type { Delta } from "@kingpost/protocol";
-
-function emptyDelta(): Delta {
-  return {
-    contractsChanged: [],
-    questionsForMe: [],
-    answersToMe: [],
-    findings: [],
-    overlappingClaims: [],
-    proposalsForMe: [],
-    proposalsAcceptedForMe: [],
-  };
-}
+import { emptyDelta } from "./test-helpers/empty-delta.js";
 
 describe("renderDeltaLines", () => {
   it("flags a breaking contract change with the diff summary", () => {

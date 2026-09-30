@@ -6,6 +6,7 @@ import { writeProjectConfig, writeCredential } from "../config.js";
 import { buildMcpServer } from "./server.js";
 import * as apiModule from "../api.js";
 import * as scanRepoModule from "../scan/scan-repo.js";
+import { emptyDelta } from "../test-helpers/empty-delta.js";
 
 describe("kingpost_who", () => {
   let cwd: string;
@@ -21,7 +22,7 @@ describe("kingpost_who", () => {
       contracts: [{ id: "c1", path: "contracts/api.ts", format: "typescript", currentVersion: 1, ownerAgentId: "agent_2", ownerUserName: "sam", createdAt: "" }],
     } as any);
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -71,7 +72,7 @@ describe("kingpost_contracts", () => {
       ],
     } as any);
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -102,7 +103,7 @@ describe("kingpost_contract", () => {
       ],
     } as any);
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -128,7 +129,7 @@ describe("kingpost_consume", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -153,7 +154,7 @@ describe("kingpost_ask", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_asker" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -211,7 +212,7 @@ describe("kingpost_scan", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -244,7 +245,7 @@ describe("kingpost_propose", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -277,7 +278,7 @@ describe("kingpost_accept", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
