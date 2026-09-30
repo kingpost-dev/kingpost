@@ -160,6 +160,22 @@ describe("handlePreToolUse — blocking breaking contract changes", () => {
     expect(listConsumersSpy).toHaveBeenCalledWith("contract_1");
   });
 
+  it("folds in advisory warnings (contract-changed, claims-overlap) alongside the block reason", async () => {
+    writeProjectConfig(cwd, {
+      serverUrl: "https://example.invalid",
+      projectId: "proj_1",
+      agentId: "agent_1",
+      lastKnownChangedContractPaths: ["contracts/schema.json"],
+      lastKnownOverlappingClaimPaths: ["contracts/*"],
+    });
+    const out = await pre("contracts/schema.json", breakingSchema);
+    expect(out.kind).toBe("block");
+    const reason = (out as { kind: "block"; reason: string }).reason;
+    expect(reason).toContain(`Breaking change to \`contracts/schema.json\`: ${expectedSummary}.`);
+    expect(reason).toContain("Contract contracts/schema.json changed recently. Read it before writing.");
+    expect(reason).toContain("Heads up: another agent's claims overlap contracts/schema.json. Coordinate before writing.");
+  });
+
   it("blocks under the codex harness too (the harness only changes how hook.ts emits it)", async () => {
     const out = await pre("contracts/schema.json", breakingSchema, "codex");
     expect(out.kind).toBe("block");

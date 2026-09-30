@@ -172,6 +172,10 @@ async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, 
       const { breaking, diffSummary } = await detectBreakingChange(client, filePath, format, proposedContent);
       if (!breaking) return null;
 
+      // A second listContracts() call: detectBreakingChange already looked one up internally
+      // to find the previous version, but doesn't return the contract's id, which is needed
+      // here for listConsumers. Not worth changing detectBreakingChange's signature to shave
+      // this one extra call — it's reused verbatim by the (unrelated) PostToolUse publish path too.
       const { contracts } = await client.listContracts();
       const contract = contracts.find((c) => c.path === filePath);
       if (!contract) return null;
@@ -187,6 +191,11 @@ async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, 
         }))
       );
 
+      // diffSummary is embedded verbatim, including whatever raw message the underlying differ
+      // produced (e.g. json-schema-diff-validator's own AssertionError text) — this is the first
+      // place that text reaches an agent directly rather than just being stored. Cleaning up the
+      // differs' summary format is real, separate work (tracked, not done here); don't paper over
+      // it with truncation here, since that risks cutting a real diagnosis mid-sentence.
       return (
         `Breaking change to \`${filePath}\`: ${diffSummary ?? "unspecified change"}. ` +
         `Consumers: ${consumers.map((c) => c.path).join(", ")} (owners: ${owners.length > 0 ? owners.join(", ") : "unknown"}). ` +
@@ -219,7 +228,14 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
   if (isContractPath(input.filePath) && input.proposedContent !== undefined) {
     const reason = await findBreakingChangeBlock(config, input.filePath, input.proposedContent);
     if (reason) {
-      if (process.env.KINGPOST_FORCE !== "1") return { kind: "block", reason };
+      if (process.env.KINGPOST_FORCE !== "1") {
+        // Fold in any advisory lines already queued above (contract-changed, claims-overlap) —
+        // a block is the only message the agent sees for this write (Codex has no separate
+        // "context" channel alongside a stderr deny), so losing them here would silently drop
+        // real signal, not just cosmetic detail.
+        const fullReason = lines.length > 0 ? `${reason}\n\n${lines.join("\n")}` : reason;
+        return { kind: "block", reason: fullReason };
+      }
       log(`KINGPOST_FORCE=1 override: allowed write to ${input.filePath} that would have been blocked: ${reason}`);
       lines.push(`KINGPOST_FORCE=1 is set, so this write was allowed through instead of blocked. It would have been blocked because: ${reason}`);
     }
