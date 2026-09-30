@@ -1,20 +1,19 @@
-import { appendFileSync, mkdirSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { parseHookInput, renderHookOutput } from "../hooks/parse.js";
 import {
   handleSessionStart,
   handleUserPromptSubmit,
   handlePreToolUse,
   handlePostToolUse,
+  type PreToolUseResult,
 } from "../hooks/handlers.js";
+import { log } from "../hooks/log.js";
 import type { Harness } from "@kingpost/protocol";
 import type { HookInput } from "../hooks/parse.js";
 
-const HANDLERS: Record<HookInput["hookEventName"], (input: HookInput) => Promise<string>> = {
+// PreToolUse has its own dispatch (it can block), so it isn't in this table.
+const HANDLERS: Record<Exclude<HookInput["hookEventName"], "PreToolUse">, (input: HookInput) => Promise<string>> = {
   SessionStart: handleSessionStart,
   UserPromptSubmit: handleUserPromptSubmit,
-  PreToolUse: handlePreToolUse,
   PostToolUse: handlePostToolUse,
 };
 
@@ -26,16 +25,6 @@ const STDIN_TIMEOUT_MS = 1500;
 // matters for the slow, rare case.
 const HANDLER_TIMEOUT_MS = 3000;
 
-function log(message: string): void {
-  try {
-    const dir = join(homedir(), ".kingpost");
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, "log"), `[${new Date().toISOString()}] ${message}\n`);
-  } catch {
-    // logging must never throw
-  }
-}
-
 function readStdin(): Promise<string> {
   return new Promise((resolve) => {
     let data = "";
@@ -45,7 +34,30 @@ function readStdin(): Promise<string> {
   });
 }
 
+/** Emits a PreToolUse result in the harness's own protocol and returns the exit code to use.
+ * Claude Code: a deny is exit 0 + `permissionDecision: "deny"` JSON on stdout.
+ * Codex: a deny is exit 2 + a NON-EMPTY reason on stderr (exit 2 with empty stderr doesn't block). */
+function emitPreToolUse(harness: Harness, result: PreToolUseResult): number {
+  if (result.kind === "block") {
+    if (harness === "codex") {
+      process.stderr.write(result.reason);
+      return 2;
+    }
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: result.reason },
+      })
+    );
+    return 0;
+  }
+  if (result.kind === "context") {
+    process.stdout.write(renderHookOutput("PreToolUse", result.text));
+  }
+  return 0;
+}
+
 export async function hookCommand(harness: Harness): Promise<void> {
+  let exitCode = 0;
   try {
     const raw = await Promise.race([
       readStdin(),
@@ -54,19 +66,28 @@ export async function hookCommand(harness: Harness): Promise<void> {
     if (!raw) return;
 
     const input = parseHookInput(harness, raw);
-    const handler = HANDLERS[input.hookEventName];
-    if (!handler) return;
 
-    const additionalContext = await Promise.race([
-      handler(input),
-      new Promise<string>((resolve) => setTimeout(() => resolve(""), HANDLER_TIMEOUT_MS)),
-    ]);
+    if (input.hookEventName === "PreToolUse") {
+      const result = await Promise.race([
+        handlePreToolUse(input),
+        new Promise<PreToolUseResult>((resolve) => setTimeout(() => resolve({ kind: "none" }), HANDLER_TIMEOUT_MS)),
+      ]);
+      exitCode = emitPreToolUse(harness, result);
+    } else {
+      const handler = HANDLERS[input.hookEventName];
+      if (!handler) return;
 
-    if (additionalContext) {
-      process.stdout.write(renderHookOutput(input.hookEventName, additionalContext));
+      const additionalContext = await Promise.race([
+        handler(input),
+        new Promise<string>((resolve) => setTimeout(() => resolve(""), HANDLER_TIMEOUT_MS)),
+      ]);
+
+      if (additionalContext) {
+        process.stdout.write(renderHookOutput(input.hookEventName, additionalContext));
+      }
     }
   } catch (err) {
     log(`hook error: ${err instanceof Error ? err.stack : String(err)}`);
   }
-  process.exit(0);
+  process.exit(exitCode);
 }

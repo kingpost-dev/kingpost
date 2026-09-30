@@ -11,6 +11,7 @@ import { diffJsonSchema } from "../differs/json-schema.js";
 import { diffOpenApi } from "../differs/openapi.js";
 import { diffDrizzle } from "../differs/drizzle.js";
 import { findConsumedContractIds } from "../scan/match-contracts.js";
+import { log } from "./log.js";
 
 export function isContractPath(path: string | undefined): boolean {
   return !!path && path.startsWith("contracts/");
@@ -147,10 +148,62 @@ export async function handleUserPromptSubmit(input: HookInput): Promise<string> 
   return TEAMMATE_LABEL + lines.join("\n");
 }
 
-export async function handlePreToolUse(input: HookInput): Promise<string> {
-  if (!input.filePath) return "";
+export type PreToolUseResult =
+  | { kind: "none" }
+  | { kind: "context"; text: string }
+  | { kind: "block"; reason: string };
+
+// Must stay under hook.ts's shared HANDLER_TIMEOUT_MS (3000ms), so a slow check resolves here as
+// "don't block" rather than being cut off by hook.ts's own race.
+const BLOCK_CHECK_TIMEOUT_MS = 2500;
+
+/** Returns a block reason if writing `proposedContent` to this contract would be a breaking change
+ * AND the contract has consumers; null otherwise. Any failure, missing credential, or timeout is
+ * null — an inability to determine breaking-ness must never block a write (fail open, same
+ * posture as detectBreakingChange). */
+async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, proposedContent: string): Promise<string | null> {
+  const token = getToken(config.projectId);
+  if (!token) return null;
+  const client = new ApiClient(config.serverUrl, config.projectId, token);
+
+  try {
+    const check = (async (): Promise<string | null> => {
+      const format = detectFormat(filePath, proposedContent);
+      const { breaking, diffSummary } = await detectBreakingChange(client, filePath, format, proposedContent);
+      if (!breaking) return null;
+
+      const { contracts } = await client.listContracts();
+      const contract = contracts.find((c) => c.path === filePath);
+      if (!contract) return null;
+      const [{ consumers }, { agents }] = await Promise.all([client.listConsumers(contract.id), client.listAgents()]);
+      if (consumers.length === 0) return null;
+
+      // Best-effort owner resolution: a consumer with a null or unknown agentId is simply left out.
+      const userNameById = new Map(agents.map((a) => [a.id, a.userName]));
+      const owners = Array.from(
+        new Set(consumers.flatMap((c) => {
+          const userName = c.agentId ? userNameById.get(c.agentId) : undefined;
+          return userName ? [userName] : [];
+        }))
+      );
+
+      return (
+        `Breaking change to \`${filePath}\`: ${diffSummary ?? "unspecified change"}. ` +
+        `Consumers: ${consumers.map((c) => c.path).join(", ")} (owners: ${owners.length > 0 ? owners.join(", ") : "unknown"}). ` +
+        `Options: version it (\`v2\` path), propose via \`kingpost_propose\`, or edit consumers in the same change.`
+      );
+    })();
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), BLOCK_CHECK_TIMEOUT_MS));
+    return await Promise.race([check, timeout]);
+  } catch {
+    return null;
+  }
+}
+
+export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResult> {
+  if (!input.filePath) return { kind: "none" };
   const config = readProjectConfig(input.cwd);
-  if (!config) return "";
+  if (!config) return { kind: "none" };
 
   const lines: string[] = [];
 
@@ -163,8 +216,17 @@ export async function handlePreToolUse(input: HookInput): Promise<string> {
     lines.push(`Heads up: another agent's claims overlap ${input.filePath}. Coordinate before writing.`);
   }
 
-  if (lines.length === 0) return "";
-  return TEAMMATE_LABEL + lines.join("\n");
+  if (isContractPath(input.filePath) && input.proposedContent !== undefined) {
+    const reason = await findBreakingChangeBlock(config, input.filePath, input.proposedContent);
+    if (reason) {
+      if (process.env.KINGPOST_FORCE !== "1") return { kind: "block", reason };
+      log(`KINGPOST_FORCE=1 override: allowed write to ${input.filePath} that would have been blocked: ${reason}`);
+      lines.push(`KINGPOST_FORCE=1 is set, so this write was allowed through instead of blocked. It would have been blocked because: ${reason}`);
+    }
+  }
+
+  if (lines.length === 0) return { kind: "none" };
+  return { kind: "context", text: TEAMMATE_LABEL + lines.join("\n") };
 }
 
 export async function handlePostToolUse(input: HookInput): Promise<string> {
