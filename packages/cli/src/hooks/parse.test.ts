@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { parseHookInput, renderHookOutput, toProjectRelative } from "./parse.js";
@@ -222,17 +222,102 @@ describe("parseHookInput proposedContent", () => {
     expect(parseHookInput("claude", payload).proposedContent).toBeUndefined();
   });
 
-  it("leaves proposedContent undefined for a Codex apply_patch call at PreToolUse", () => {
+  it("returns the full content for an apply_patch Add File (new contract), absolute path", () => {
+    const dir = mktempFixtureDir();
+    const payload = JSON.stringify({
+      cwd: dir,
+      hook_event_name: "PreToolUse",
+      tool_name: "apply_patch",
+      tool_input: {
+        command: `*** Begin Patch\n*** Add File: ${path.join(dir, "contracts/user.json")}\n+{"type":"object"}\n*** End Patch`,
+      },
+    });
+    expect(parseHookInput("codex", payload).proposedContent).toBe('{"type":"object"}');
+  });
+
+  it("substitutes a single apply_patch hunk against the current file, absolute path (real Codex sample)", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "contracts/user.json");
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}');
+    // Captured verbatim from a real Codex session (gpt-6-luna, codex-cli 0.159.1) editing a
+    // registered contract via apply_patch — see V1.1e dogfood testing notes.
+    const command =
+      `*** Begin Patch\n*** Update File: ${filePath}\n@@\n` +
+      `-{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}\n` +
+      `+{"type":"object","properties":{}}\n*** End Patch`;
+    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+    expect(parseHookInput("codex", payload).proposedContent).toBe('{"type":"object","properties":{}}');
+  });
+
+  it("resolves a RELATIVE apply_patch path against the hook's reported cwd, not the process cwd", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "contracts/api.ts");
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, "old content");
+    const command = `*** Begin Patch\n*** Update File: contracts/api.ts\n@@\n-old content\n+new content\n*** End Patch`;
+    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+    expect(parseHookInput("codex", payload).proposedContent).toBe("new content");
+  });
+
+  it("reconstructs an apply_patch hunk with context lines around the changed line", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "api.ts");
+    writeFileSync(filePath, "line one\nold line\nline three\n");
+    const command =
+      `*** Begin Patch\n*** Update File: ${filePath}\n@@\n` +
+      `line one\n-old line\n+new line\nline three\n*** End Patch`;
+    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+    expect(parseHookInput("codex", payload).proposedContent).toBe("line one\nnew line\nline three\n");
+  });
+
+  it("returns undefined for an apply_patch Add File whose body has a non-+-prefixed line", () => {
     const payload = JSON.stringify({
       cwd: "/repo",
       hook_event_name: "PreToolUse",
       tool_name: "apply_patch",
-      tool_input: { command: "*** Begin Patch\n*** Update File: contracts/api.ts\n@@\n-old\n+new\n*** End Patch" },
+      tool_input: { command: "*** Begin Patch\n*** Add File: /repo/contracts/api.ts\nnot a plus line\n*** End Patch" },
     });
     expect(parseHookInput("codex", payload).proposedContent).toBeUndefined();
   });
 
-  it("leaves proposedContent undefined for an unrecognized tool at PreToolUse", () => {
+  it("returns undefined for an apply_patch update with more than one hunk (too complex, bail)", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "api.ts");
+    writeFileSync(filePath, "one\ntwo\nthree\nfour\n");
+    const command =
+      `*** Begin Patch\n*** Update File: ${filePath}\n@@\n-one\n+ONE\n@@\n-three\n+THREE\n*** End Patch`;
+    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+    expect(parseHookInput("codex", payload).proposedContent).toBeUndefined();
+  });
+
+  it("returns undefined for an apply_patch update whose hunk context doesn't match the current file", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "api.ts");
+    writeFileSync(filePath, "completely different content\n");
+    const command = `*** Begin Patch\n*** Update File: ${filePath}\n@@\n-old\n+new\n*** End Patch`;
+    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+    expect(parseHookInput("codex", payload).proposedContent).toBeUndefined();
+  });
+
+  it("returns undefined for an apply_patch update targeting a file that doesn't exist on disk", () => {
+    const dir = mktempFixtureDir();
+    const filePath = path.join(dir, "missing.ts");
+    const command = `*** Begin Patch\n*** Update File: ${filePath}\n@@\n-old\n+new\n*** End Patch`;
+    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+    expect(parseHookInput("codex", payload).proposedContent).toBeUndefined();
+  });
+
+  it("computes content only for the FIRST file in a multi-file apply_patch, matching the existing path-extraction limit", () => {
+    const command =
+      "*** Begin Patch\n*** Add File: /repo/contracts/a.ts\n+content A\n*** Add File: /repo/contracts/b.ts\n+content B\n*** End Patch";
+    const payload = JSON.stringify({ cwd: "/repo", hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+    const result = parseHookInput("codex", payload);
+    expect(result.filePath).toBe("contracts/a.ts");
+    expect(result.proposedContent).toBe("content A");
+  });
+
+  it("returns undefined for an unrecognized tool at PreToolUse", () => {
     const payload = JSON.stringify({
       cwd: "/repo",
       hook_event_name: "PreToolUse",
