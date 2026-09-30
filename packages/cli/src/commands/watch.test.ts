@@ -19,7 +19,15 @@ function useTempHome(): string {
 }
 
 function emptyDelta(): Delta {
-  return { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] };
+  return {
+    contractsChanged: [],
+    questionsForMe: [],
+    answersToMe: [],
+    findings: [],
+    overlappingClaims: [],
+    proposalsForMe: [],
+    proposalsAcceptedForMe: [],
+  };
 }
 
 function deltaWithQuestion(): Delta {

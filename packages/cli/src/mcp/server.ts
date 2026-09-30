@@ -192,6 +192,38 @@ export function buildMcpServer(cwd: string) {
     }
   );
 
+  server.tool(
+    "kingpost_propose",
+    "Propose a change to a contract — creates a proposal (notifying the owner and its consumers), without blocking you from continuing other work. Use this instead of editing contracts/** directly when your change would be breaking, or when you don't own the contract.",
+    { contractId: z.string(), newContent: z.string(), rationale: z.string() },
+    async ({ contractId, newContent, rationale }) => {
+      try {
+        const { client, agentId } = ctx();
+        const { proposal } = await client.proposeChange(contractId, { proposedByAgentId: agentId, newContent, rationale });
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return { content: [{ type: "text" as const, text: `Proposal [${proposal.id}] created for [${contractId}].${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
+  server.tool(
+    "kingpost_accept",
+    "Accept a proposal (by id, from a brief or delta) as the contract's owner — publishes the proposed content as a new version and notifies consumers.",
+    { proposalId: z.string() },
+    async ({ proposalId }) => {
+      try {
+        const { client, agentId } = ctx();
+        const { contract, version } = await client.acceptProposal(proposalId);
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return { content: [{ type: "text" as const, text: `Proposal [${proposalId}] accepted. ${contract.path} is now v${version.version}.${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
   server.tool("kingpost_brief", "Get the same brief you got at session start.", {}, async () => {
     try {
       const { client, agentId } = ctx();

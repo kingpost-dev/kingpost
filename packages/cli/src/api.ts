@@ -1,4 +1,4 @@
-import type { Agent, Contract, ContractVersion, Consumer, Question, Answer, Finding, Delta } from "@kingpost/protocol";
+import type { Agent, Contract, ContractVersion, Consumer, Question, Answer, Finding, Delta, Proposal } from "@kingpost/protocol";
 
 const TIMEOUT_MS = 1500;
 
@@ -75,6 +75,18 @@ export class ApiClient {
 
   transferContract(id: string, toUserName: string) {
     return this.request<{ contract: Contract }>(`/contracts/${id}/transfer`, { method: "POST", body: JSON.stringify({ toUserName }) });
+  }
+
+  listConsumers(contractId: string) {
+    return this.request<{ consumers: Consumer[] }>(`/contracts/${contractId}/consumers`, { method: "GET" });
+  }
+
+  proposeChange(contractId: string, body: { proposedByAgentId: string; newContent: string; rationale: string }) {
+    return this.request<{ proposal: Proposal }>(`/contracts/${contractId}/proposals`, { method: "POST", body: JSON.stringify(body) });
+  }
+
+  acceptProposal(proposalId: string) {
+    return this.request<{ proposal: Proposal; contract: Contract; version: ContractVersion }>(`/proposals/${proposalId}/accept`, { method: "POST" });
   }
 }
 

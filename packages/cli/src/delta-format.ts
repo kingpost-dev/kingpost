@@ -13,5 +13,7 @@ export function renderDeltaLines(delta: Delta): string[] {
   for (const a of delta.answersToMe) lines.push(`Answered: [${a.question.id}] ${a.answer.text}`);
   for (const f of delta.findings) lines.push(`Finding: ${f.finding.text}`);
   for (const s of delta.overlappingClaims) lines.push(`Heads up: another agent is touching ${s.claims.join(", ")}`);
+  for (const p of delta.proposalsForMe) lines.push(`Proposal for you: [${p.proposal.id}] change to ${p.contract.path} — ${p.proposal.rationale}`);
+  for (const p of delta.proposalsAcceptedForMe) lines.push(`Proposal accepted: [${p.proposal.id}] ${p.contract.path} is now v${p.version.version}`);
   return lines;
 }

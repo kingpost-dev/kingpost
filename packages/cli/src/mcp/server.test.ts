@@ -21,7 +21,7 @@ describe("kingpost_who", () => {
       contracts: [{ id: "c1", path: "contracts/api.ts", format: "typescript", currentVersion: 1, ownerAgentId: "agent_2", ownerUserName: "sam", createdAt: "" }],
     } as any);
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
       cursor: 0,
     });
   });
@@ -71,7 +71,7 @@ describe("kingpost_contracts", () => {
       ],
     } as any);
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
       cursor: 0,
     });
   });
@@ -102,7 +102,7 @@ describe("kingpost_contract", () => {
       ],
     } as any);
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
       cursor: 0,
     });
   });
@@ -128,7 +128,7 @@ describe("kingpost_consume", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
       cursor: 0,
     });
   });
@@ -153,7 +153,7 @@ describe("kingpost_ask", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_asker" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
       cursor: 0,
     });
   });
@@ -211,7 +211,7 @@ describe("kingpost_scan", () => {
     writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
     writeCredential("proj_1", "tok_1");
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
       cursor: 0,
     });
   });
@@ -233,5 +233,76 @@ describe("kingpost_scan", () => {
     const tool = (server as any)._registeredTools?.["kingpost_scan"];
     const result = await tool.handler({}, {});
     expect(result.isError).toBe(true);
+  });
+});
+
+describe("kingpost_propose", () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "kp-mcp-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      cursor: 0,
+    });
+  });
+
+  it("proposes a change using the calling agent's own id, and reports the new proposal's id", async () => {
+    const proposeSpy = vi.spyOn(apiModule.ApiClient.prototype, "proposeChange").mockResolvedValue({ proposal: { id: "proposal_1" } as any });
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_propose"];
+    if (!tool) throw new Error("Could not find kingpost_propose's registered callback on the McpServer instance.");
+    const result = await tool.handler({ contractId: "c1", newContent: "{}", rationale: "tighten validation" }, {});
+    expect(proposeSpy).toHaveBeenCalledWith("c1", { proposedByAgentId: "agent_1", newContent: "{}", rationale: "tighten validation" });
+    expect(result.content[0].text).toContain("proposal_1");
+  });
+
+  it("returns a readable error instead of throwing when the client call rejects", async () => {
+    vi.spyOn(apiModule.ApiClient.prototype, "proposeChange").mockRejectedValue(new Error("kingpost server returned 500"));
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_propose"];
+    const result = await tool.handler({ contractId: "c1", newContent: "{}", rationale: "tighten validation" }, {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("kingpost error");
+  });
+});
+
+describe("kingpost_accept", () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "kp-mcp-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
+      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [], proposalsForMe: [], proposalsAcceptedForMe: [] },
+      cursor: 0,
+    });
+  });
+
+  it("accepts a proposal by id, and reports the resulting contract path and version", async () => {
+    const acceptSpy = vi.spyOn(apiModule.ApiClient.prototype, "acceptProposal").mockResolvedValue({
+      proposal: { id: "proposal_1" } as any,
+      contract: { id: "c1", path: "contracts/api.json" } as any,
+      version: { version: 3 } as any,
+    });
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_accept"];
+    if (!tool) throw new Error("Could not find kingpost_accept's registered callback on the McpServer instance.");
+    const result = await tool.handler({ proposalId: "proposal_1" }, {});
+    expect(acceptSpy).toHaveBeenCalledWith("proposal_1");
+    expect(result.content[0].text).toContain("contracts/api.json");
+    expect(result.content[0].text).toContain("v3");
+  });
+
+  it("returns a readable error instead of throwing when the client call rejects", async () => {
+    vi.spyOn(apiModule.ApiClient.prototype, "acceptProposal").mockRejectedValue(new Error("kingpost server returned 500"));
+    const server = buildMcpServer(cwd);
+    const tool = (server as any)._registeredTools?.["kingpost_accept"];
+    const result = await tool.handler({ proposalId: "proposal_1" }, {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("kingpost error");
   });
 });
