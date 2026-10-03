@@ -90,15 +90,25 @@ export class ApiClient {
   }
 }
 
-export function createProject(serverUrl: string, name: string) {
+// Deliberately NOT the 1500ms TIMEOUT_MS above: that budget exists so a hook can never noticeably
+// slow an agent. This is a one-time, user-facing command, and a cold DNS/TLS handshake on a slow
+// network (or a Windows machine, where node.exe's own spawn overhead is already 1-2s) can
+// legitimately take longer than 1.5s — at which point `kingpost init` died with a raw undici stack.
+const CREATE_PROJECT_TIMEOUT_MS = 15_000;
+
+export async function createProject(serverUrl: string, name: string): Promise<{ projectId: string; token: string }> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1500);
-  return fetch(`${serverUrl}/api/projects`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-    signal: controller.signal,
-  })
-    .then((r) => r.json() as Promise<{ projectId: string; token: string }>)
-    .finally(() => clearTimeout(timeout));
+  const timeout = setTimeout(() => controller.abort(), CREATE_PROJECT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${serverUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`kingpost server returned ${res.status} while creating the project`);
+    return (await res.json()) as { projectId: string; token: string };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
