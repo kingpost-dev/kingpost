@@ -73,32 +73,71 @@ function firstApplyPatchSection(command: string): { kind: "add" | "update"; body
   return { kind, bodyLines };
 }
 
-/** Reconstructs a single diff hunk's "before" text (context lines + removed "-" lines) and
- * "after" text (context lines + added "+" lines) — a line with neither prefix is context,
- * present in both. Returns the current content with the first exact occurrence of "before"
- * replaced by "after", or undefined if "before" isn't found verbatim — fail open, same
- * philosophy as the Edit case's old_string/new_string substitution above. */
-function applyPatchHunk(current: string, hunkLines: string[]): string | undefined {
-  const before: string[] = [];
-  const after: string[] = [];
-  for (const line of hunkLines) {
-    if (line.startsWith("-")) before.push(line.slice(1));
-    else if (line.startsWith("+")) after.push(line.slice(1));
-    else {
-      before.push(line);
-      after.push(line);
-    }
+/** Index of the first run of lines in `haystack` (at or after `from`) that equals `needle`
+ * line-for-line, or -1. Whole-line equality, never substring: a removed line must not "match"
+ * the tail of a longer line. */
+function findLines(haystack: string[], needle: string[], from: number): number {
+  outer: for (let i = from; i + needle.length <= haystack.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer;
+    return i;
   }
-  const beforeText = before.join("\n");
-  if (!current.includes(beforeText)) return undefined;
-  return current.replace(beforeText, after.join("\n"));
+  return -1;
 }
 
-/** Computes proposed content for an apply_patch call, for the common cases: a brand-new file
- * (every body line "+"-prefixed — the new content is exactly those lines with "+" stripped) or
- * an existing file with exactly ONE diff hunk (a single "@@" marker). Bails (undefined) on
- * anything more complex — multiple hunks, an Add-File body with a non-"+" line, or a hunk whose
- * context doesn't match the current file verbatim — rather than risk silently computing the
+/** Applies every hunk of an apply_patch "Update File" body to `current` and returns the result,
+ * or undefined if any hunk can't be located verbatim (fail open — never a guessed result).
+ *
+ * Hunk format (apply_patch's grammar, confirmed against real Codex output): a hunk starts at a
+ * line beginning "@@" (any trailing scope header is ignored); every following line carries a
+ * ONE-character prefix — " " context (kept), "-" removed, "+" added — which is stripped. Context
+ * lines being space-prefixed is easy to miss: a single-line edit usually comes with none, so only
+ * a multi-line change shows it. Keeping that space made the "before" text unmatchable and every
+ * such edit silently failed open.
+ *
+ * Hunks are ordered and non-overlapping, so each is searched for from where the previous one
+ * ended — otherwise an identical earlier block would capture a later hunk and corrupt the result.
+ * Files are matched LF-normalized so a CRLF checkout (Git for Windows' default) still matches. */
+function applyPatchHunks(current: string, bodyLines: string[]): string | undefined {
+  const hunks: string[][] = [];
+  for (const line of bodyLines) {
+    if (line.startsWith("@@")) hunks.push([]);
+    else if (hunks.length > 0) hunks[hunks.length - 1].push(line);
+  }
+  if (hunks.length === 0) return undefined;
+
+  let lines = current.replace(/\r\n/g, "\n").split("\n");
+  let cursor = 0;
+  for (const hunk of hunks) {
+    // A trailing "" is a split() artifact; a real blank context line is " " (prefixed).
+    while (hunk.length > 0 && hunk[hunk.length - 1] === "") hunk.pop();
+
+    const before: string[] = [];
+    const after: string[] = [];
+    for (const line of hunk) {
+      if (line.startsWith("-")) before.push(line.slice(1));
+      else if (line.startsWith("+")) after.push(line.slice(1));
+      else {
+        const context = line.startsWith(" ") ? line.slice(1) : line;
+        before.push(context);
+        after.push(context);
+      }
+    }
+    // Nothing to anchor on (a pure insertion with no context): can't tell WHERE it goes.
+    if (before.length === 0) return undefined;
+
+    const at = findLines(lines, before, cursor);
+    if (at === -1) return undefined;
+    lines = [...lines.slice(0, at), ...after, ...lines.slice(at + before.length)];
+    cursor = at + after.length;
+  }
+  return lines.join("\n");
+}
+
+/** Computes proposed content for an apply_patch call: a brand-new file (every body line
+ * "+"-prefixed — the new content is exactly those lines with "+" stripped) or an update of an
+ * existing file (one or more "@@" hunks, see applyPatchHunks). Bails (undefined) on anything it
+ * can't reconstruct with confidence — an Add-File body with a non-"+" line, or any hunk that
+ * doesn't match the current file line-for-line — rather than risk silently computing the
  * WRONG proposed content from a partial reconstruction. `rawFilePath` is the caller's
  * already-computed `extractApplyPatchFilePath(command)` result, threaded through rather than
  * re-parsed here, so the path used for `filePath` and the path used to read the current file
@@ -119,8 +158,6 @@ function computeApplyPatchContent(command: string, rawFilePath: string | undefin
 
   // kind === "update"
   if (!rawFilePath) return undefined;
-  const hunkStarts = section.bodyLines.reduce<number[]>((acc, l, i) => (l.startsWith("@@") ? [...acc, i] : acc), []);
-  if (hunkStarts.length !== 1) return undefined; // zero or multiple hunks: too complex, bail
   try {
     // rawFilePath may be relative (empirically, Codex has sent both absolute and cwd-relative
     // paths in the "*** Update File:" header across different sessions) — readFileSync resolves
@@ -128,7 +165,7 @@ function computeApplyPatchContent(command: string, rawFilePath: string | undefin
     // joined explicitly rather than passed through as-is.
     const absolutePath = path.isAbsolute(rawFilePath) ? rawFilePath : path.join(cwd, rawFilePath);
     const current = readFileSync(absolutePath, "utf8");
-    return applyPatchHunk(current, section.bodyLines.slice(hunkStarts[0] + 1));
+    return applyPatchHunks(current, section.bodyLines);
   } catch {
     return undefined;
   }

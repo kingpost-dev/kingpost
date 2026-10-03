@@ -260,15 +260,102 @@ describe("parseHookInput proposedContent", () => {
     expect(parseHookInput("codex", payload).proposedContent).toBe("new content");
   });
 
-  it("reconstructs an apply_patch hunk with context lines around the changed line", () => {
+  // The next tests use payloads captured verbatim from a real Codex session (codex-cli 0.160.0,
+  // gpt-6-luna) editing this pretty-printed contract. Context lines in a real hunk carry a ONE-space
+  // prefix on top of the file's own indentation — e.g. `     "email"` is 1 prefix + 4 indent.
+  const PRETTY_CONTRACT =
+    '{\n  "type": "object",\n  "properties": {\n    "name": { "type": "string" },\n' +
+    '    "age": { "type": "number" },\n    "email": { "type": "string" }\n  },\n  "required": ["name", "age"]\n}\n';
+
+  function patchPayload(dir: string, command: string): string {
+    return JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+  }
+
+  function contractDir(content: string = PRETTY_CONTRACT): string {
     const dir = mktempFixtureDir();
-    const filePath = path.join(dir, "api.ts");
-    writeFileSync(filePath, "line one\nold line\nline three\n");
+    mkdirSync(path.join(dir, "contracts"), { recursive: true });
+    writeFileSync(path.join(dir, "contracts/user.json"), content);
+    return dir;
+  }
+
+  it("real Codex payload: a one-line change in a multi-line file (no context lines, relative path)", () => {
+    const dir = contractDir();
     const command =
-      `*** Begin Patch\n*** Update File: ${filePath}\n@@\n` +
-      `line one\n-old line\n+new line\nline three\n*** End Patch`;
-    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
-    expect(parseHookInput("codex", payload).proposedContent).toBe("line one\nnew line\nline three\n");
+      '*** Begin Patch\n*** Update File: contracts/user.json\n@@\n' +
+      '-    "email": { "type": "string" }\n+    "email": { "type": "number" }\n*** End Patch';
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBe(
+      PRETTY_CONTRACT.replace('"email": { "type": "string" }', '"email": { "type": "number" }')
+    );
+  });
+
+  it("real Codex payload: a multi-line hunk with SPACE-PREFIXED context lines", () => {
+    // Regression: context lines were kept with their prefix space, so the "before" text could never
+    // match the file and every multi-line edit silently failed open (no block attempted at all).
+    const dir = contractDir();
+    const command =
+      '*** Begin Patch\n*** Update File: contracts/user.json\n@@\n' +
+      '-    "age": { "type": "number" },\n     "email": { "type": "string" }\n   },\n' +
+      '-  "required": ["name", "age"]\n+  "required": ["name"]\n }\n*** End Patch';
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBe(
+      '{\n  "type": "object",\n  "properties": {\n    "name": { "type": "string" },\n' +
+        '    "email": { "type": "string" }\n  },\n  "required": ["name"]\n}\n'
+    );
+  });
+
+  it("a pure deletion leaves no stray blank line behind", () => {
+    const dir = contractDir("a\nb\nc\nd\n");
+    const command = "*** Begin Patch\n*** Update File: contracts/user.json\n@@\n a\n-b\n-c\n d\n*** End Patch";
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBe("a\nd\n");
+  });
+
+  it("applies multiple hunks in order", () => {
+    const dir = contractDir("one\ntwo\nthree\nfour\nfive\n");
+    const command =
+      "*** Begin Patch\n*** Update File: contracts/user.json\n@@\n-one\n+ONE\n@@ some scope header\n-four\n+FOUR\n*** End Patch";
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBe("ONE\ntwo\nthree\nFOUR\nfive\n");
+  });
+
+  it("searches each hunk from where the previous one ended, so an identical earlier block can't capture a later hunk", () => {
+    const dir = contractDir("x\ndup\ny\nz\ndup\nw\n");
+    // Second hunk targets the SECOND "dup" (disambiguated by its context "z" above it).
+    const command =
+      "*** Begin Patch\n*** Update File: contracts/user.json\n@@\n-x\n+X\n@@\n z\n-dup\n+DUP\n*** End Patch";
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBe("X\ndup\ny\nz\nDUP\nw\n");
+  });
+
+  it("returns undefined if ANY hunk fails to match (never a partial reconstruction)", () => {
+    const dir = contractDir("one\ntwo\nthree\n");
+    const command =
+      "*** Begin Patch\n*** Update File: contracts/user.json\n@@\n-one\n+ONE\n@@\n-not in the file\n+x\n*** End Patch";
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBeUndefined();
+  });
+
+  it("matches whole lines only, never the tail of a longer line", () => {
+    const dir = contractDir('  "name": "x-age"\n');
+    const command = '*** Begin Patch\n*** Update File: contracts/user.json\n@@\n-"age"\n+"AGE"\n*** End Patch';
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBeUndefined();
+  });
+
+  it("matches a CRLF file (Git for Windows' default checkout) and returns LF-normalized content", () => {
+    const dir = contractDir(PRETTY_CONTRACT.replace(/\n/g, "\r\n"));
+    const command =
+      '*** Begin Patch\n*** Update File: contracts/user.json\n@@\n' +
+      '-    "age": { "type": "number" },\n     "email": { "type": "string" }\n*** End Patch';
+    const result = parseHookInput("codex", patchPayload(dir, command)).proposedContent;
+    expect(result).toBe(PRETTY_CONTRACT.replace('    "age": { "type": "number" },\n', ""));
+    expect(result).not.toContain("\r");
+  });
+
+  it("returns undefined for a hunk with only added lines (no context to say WHERE it goes)", () => {
+    const dir = contractDir("a\nb\n");
+    const command = "*** Begin Patch\n*** Update File: contracts/user.json\n@@\n+inserted\n*** End Patch";
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBeUndefined();
+  });
+
+  it("returns undefined for an update with no @@ hunk marker at all", () => {
+    const dir = contractDir("a\nb\n");
+    const command = "*** Begin Patch\n*** Update File: contracts/user.json\n-a\n+A\n*** End Patch";
+    expect(parseHookInput("codex", patchPayload(dir, command)).proposedContent).toBeUndefined();
   });
 
   it("returns undefined for an apply_patch Add File whose body has a non-+-prefixed line", () => {
@@ -278,16 +365,6 @@ describe("parseHookInput proposedContent", () => {
       tool_name: "apply_patch",
       tool_input: { command: "*** Begin Patch\n*** Add File: /repo/contracts/api.ts\nnot a plus line\n*** End Patch" },
     });
-    expect(parseHookInput("codex", payload).proposedContent).toBeUndefined();
-  });
-
-  it("returns undefined for an apply_patch update with more than one hunk (too complex, bail)", () => {
-    const dir = mktempFixtureDir();
-    const filePath = path.join(dir, "api.ts");
-    writeFileSync(filePath, "one\ntwo\nthree\nfour\n");
-    const command =
-      `*** Begin Patch\n*** Update File: ${filePath}\n@@\n-one\n+ONE\n@@\n-three\n+THREE\n*** End Patch`;
-    const payload = JSON.stringify({ cwd: dir, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
     expect(parseHookInput("codex", payload).proposedContent).toBeUndefined();
   });
 
