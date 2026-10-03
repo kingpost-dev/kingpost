@@ -34,15 +34,17 @@ function readStdin(): Promise<string> {
   });
 }
 
-/** Emits a PreToolUse result in the harness's own protocol and returns the exit code to use.
- * Claude Code: a deny is exit 0 + `permissionDecision: "deny"` JSON on stdout.
- * Codex: a deny is exit 2 + a NON-EMPTY reason on stderr (exit 2 with empty stderr doesn't block). */
-function emitPreToolUse(harness: Harness, result: PreToolUseResult): number {
+/** Emits a PreToolUse result and returns the exit code to use. A block is always the
+ * `permissionDecision: "deny"` JSON on stdout with exit 0 — for BOTH Claude Code and Codex.
+ *
+ * Codex also accepts exit 2 + stderr as a deny, but that can't be used here: on Windows, Codex
+ * launches every hook command as `pwsh -NoProfile -Command "<command>"`, and `-Command` reports
+ * exit 1 for any failed native command regardless of its real exit code, so Codex sees 1 instead
+ * of 2 and the "block" silently fails open (upstream issue openai/codex#48183). The JSON deny
+ * exits 0, so it passes through that wrapper untouched. Verified against a real Codex CLI
+ * (v0.160.0) that the JSON deny blocks `apply_patch` too, not just shell commands. */
+function emitPreToolUse(result: PreToolUseResult): number {
   if (result.kind === "block") {
-    if (harness === "codex") {
-      process.stderr.write(result.reason);
-      return 2;
-    }
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: result.reason },
@@ -72,7 +74,7 @@ export async function hookCommand(harness: Harness): Promise<void> {
         handlePreToolUse(input),
         new Promise<PreToolUseResult>((resolve) => setTimeout(() => resolve({ kind: "none" }), HANDLER_TIMEOUT_MS)),
       ]);
-      exitCode = emitPreToolUse(harness, result);
+      exitCode = emitPreToolUse(result);
     } else {
       const handler = HANDLERS[input.hookEventName];
       if (!handler) return;

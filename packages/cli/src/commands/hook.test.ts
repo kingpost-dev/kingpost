@@ -44,11 +44,14 @@ afterEach(() => {
 });
 
 describe("hookCommand — PreToolUse dispatch", () => {
-  it("claude + block: writes the JSON deny shape to stdout and exits 0", async () => {
+  // Both harnesses use the same JSON deny + exit 0, never exit 2: on Windows Codex runs hooks via
+  // `pwsh -Command`, which rewrites exit 2 to exit 1 so an exit-2 block silently fails open
+  // (openai/codex#48183). Asserting exit 0 AND empty stderr is what guards against regressing to it.
+  it.each(["claude", "codex"] as const)("%s + block: writes the JSON deny shape to stdout and exits 0", async (harness) => {
     vi.mocked(handlePreToolUse).mockResolvedValue({ kind: "block", reason: "x" });
     feedStdin(event("PreToolUse"));
 
-    await hookCommand("claude");
+    await hookCommand(harness);
 
     expect(stdoutSpy).toHaveBeenCalledTimes(1);
     expect(JSON.parse(stdoutSpy.mock.calls[0][0] as string)).toEqual({
@@ -57,18 +60,6 @@ describe("hookCommand — PreToolUse dispatch", () => {
     expect(stderrSpy).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledTimes(1);
     expect(exitSpy).toHaveBeenCalledWith(0);
-  });
-
-  it("codex + block: writes the reason to stderr and exits 2", async () => {
-    vi.mocked(handlePreToolUse).mockResolvedValue({ kind: "block", reason: "x" });
-    feedStdin(event("PreToolUse"));
-
-    await hookCommand("codex");
-
-    expect(stderrSpy).toHaveBeenCalledWith("x");
-    expect(stdoutSpy).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledTimes(1);
-    expect(exitSpy).toHaveBeenCalledWith(2);
   });
 
   it.each(["claude", "codex"] as const)("%s + context: writes the additionalContext JSON and exits 0", async (harness) => {

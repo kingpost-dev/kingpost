@@ -230,9 +230,9 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
     if (reason) {
       if (process.env.KINGPOST_FORCE !== "1") {
         // Fold in any advisory lines already queued above (contract-changed, claims-overlap) —
-        // a block is the only message the agent sees for this write (Codex has no separate
-        // "context" channel alongside a stderr deny), so losing them here would silently drop
-        // real signal, not just cosmetic detail.
+        // a block is emitted as a deny carrying only this reason text (no separate
+        // additionalContext alongside it), so losing them here would silently drop real
+        // signal, not just cosmetic detail.
         const fullReason = lines.length > 0 ? `${reason}\n\n${lines.join("\n")}` : reason;
         return { kind: "block", reason: fullReason };
       }
