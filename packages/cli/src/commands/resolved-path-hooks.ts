@@ -80,12 +80,34 @@ function quote(p: string): string {
   return `"${p}"`;
 }
 
-function buildCodexHook(entryPath: string, event: string) {
-  return {
+/** A PowerShell single-quoted string literal: no `$`/backtick/`"` interpolation, with embedded
+ * single quotes escaped by doubling. */
+function psQuote(p: string): string {
+  return `'${p.replace(/'/g, "''")}'`;
+}
+
+// Exported for tests only — `platform`/`execPath` are injectable so the Windows-only branch can be
+// exercised on any OS (same pattern as toProjectRelative's injected PathModule in parse.ts).
+export function buildCodexHook(
+  entryPath: string,
+  event: string,
+  platform: NodeJS.Platform = process.platform,
+  execPath: string = process.execPath
+) {
+  const hook: Record<string, unknown> = {
     type: "command",
-    command: `${quote(process.execPath)} ${quote(entryPath)} hook ${event} --harness codex`,
+    command: `${quote(execPath)} ${quote(entryPath)} hook ${event} --harness codex`,
     additionalContextLimit: 5000,
   };
+  if (platform === "win32") {
+    // On Windows, Codex launches a hook as `pwsh -NoProfile -Command "<command>"`. PowerShell treats
+    // a command STRING that starts with a quoted path as an expression, not an invocation, so the
+    // `command` above (a quoted node.exe path — always containing a space under "Program Files")
+    // never actually runs. Codex's `commandWindows` override takes a PowerShell-correct form: the
+    // call operator `&` followed by single-quoted literals. Other platforms keep `command` alone.
+    hook.commandWindows = `& ${psQuote(execPath)} ${psQuote(entryPath)} hook ${event} --harness codex`;
+  }
+  return hook;
 }
 
 /** Upserts `hook` into the matcher group for `matcher` within `groups` (an event's array of
@@ -135,14 +157,18 @@ export function upsertClaudeHooks(cwd: string, entryPath: string = resolvedEntry
   writeFileSync(path, JSON.stringify(settings, null, 2) + "\n");
 }
 
-export function upsertCodexHooks(cwd: string, entryPath: string = resolvedEntryPath()): void {
+export function upsertCodexHooks(
+  cwd: string,
+  entryPath: string = resolvedEntryPath(),
+  platform: NodeJS.Platform = process.platform
+): void {
   const dir = join(cwd, ".codex");
   const path = join(dir, "hooks.json");
   const config = readJsonObject(path);
   const hooks = typeof config.hooks === "object" && config.hooks !== null ? (config.hooks as Record<string, unknown>) : {};
 
   for (const { event, matcher } of CODEX_HOOK_EVENTS) {
-    hooks[event] = upsertMatcherGroup(hooks[event], event, matcher, buildCodexHook(entryPath, event), isKingpostCodexHook);
+    hooks[event] = upsertMatcherGroup(hooks[event], event, matcher, buildCodexHook(entryPath, event, platform), isKingpostCodexHook);
   }
   config.hooks = hooks;
 

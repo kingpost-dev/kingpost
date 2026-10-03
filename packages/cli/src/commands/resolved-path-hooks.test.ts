@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upsertClaudeHooks, upsertCodexHooks } from "./resolved-path-hooks.js";
+import { upsertClaudeHooks, upsertCodexHooks, buildCodexHook } from "./resolved-path-hooks.js";
 
 const ENTRY_PATH_A = "/opt/kingpost/dist/index.js";
 const ENTRY_PATH_B = "/opt/kingpost-new/dist/index.js";
@@ -70,6 +70,56 @@ describe("upsertClaudeHooks", () => {
       expect(settings.hooks[event]).toHaveLength(1);
       expect(settings.hooks[event][0].hooks).toHaveLength(1);
       expect(settings.hooks[event][0].hooks[0].args[0]).toBe(ENTRY_PATH_B);
+    }
+  });
+});
+
+describe("buildCodexHook — Windows commandWindows override", () => {
+  const WIN_NODE = "C:\\Program Files\\nodejs\\node.exe";
+  const WIN_ENTRY = "C:\\Users\\Jackson\\AppData\\Roaming\\npm\\node_modules\\kingpost\\dist\\index.js";
+
+  it("on win32, adds a PowerShell call-operator form with single-quoted literals", () => {
+    const hook = buildCodexHook(WIN_ENTRY, "PreToolUse", "win32", WIN_NODE);
+    // Must start with `&`: a PowerShell command string beginning with a quoted path is parsed as an
+    // expression and never invoked — the failure this override exists to fix.
+    expect(hook.commandWindows).toBe(`& '${WIN_NODE}' '${WIN_ENTRY}' hook PreToolUse --harness codex`);
+    expect((hook.commandWindows as string).startsWith("& ")).toBe(true);
+    // The plain `command` is still emitted for everything that doesn't use the Windows override.
+    expect(hook.command).toBe(`"${WIN_NODE}" "${WIN_ENTRY}" hook PreToolUse --harness codex`);
+  });
+
+  it("doubles an embedded single quote so a path like C:\\Users\\O'Brien can't break out of the literal", () => {
+    const hook = buildCodexHook("C:\\Users\\O'Brien\\kp\\index.js", "SessionStart", "win32", WIN_NODE);
+    expect(hook.commandWindows).toBe(`& '${WIN_NODE}' 'C:\\Users\\O''Brien\\kp\\index.js' hook SessionStart --harness codex`);
+  });
+
+  it("does not interpolate $ in a path (single quotes, not double)", () => {
+    const hook = buildCodexHook("C:\\Users\\a$b\\index.js", "PostToolUse", "win32", WIN_NODE);
+    expect(hook.commandWindows).toContain("'C:\\Users\\a$b\\index.js'");
+    expect(hook.commandWindows).not.toContain('"');
+  });
+
+  it.each(["darwin", "linux"] as const)("on %s, emits no commandWindows at all (output unchanged)", (platform) => {
+    const hook = buildCodexHook("/opt/kingpost/dist/index.js", "PreToolUse", platform, "/usr/local/bin/node");
+    expect(hook).toEqual({
+      type: "command",
+      command: `"/usr/local/bin/node" "/opt/kingpost/dist/index.js" hook PreToolUse --harness codex`,
+      additionalContextLimit: 5000,
+    });
+    expect("commandWindows" in hook).toBe(false);
+  });
+
+  it("upsertCodexHooks on win32 writes commandWindows for every event, and re-running replaces rather than duplicates", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    upsertCodexHooks(dir, ENTRY_PATH_A, "win32");
+    upsertCodexHooks(dir, ENTRY_PATH_B, "win32");
+    const config = readJson(join(dir, ".codex", "hooks.json"));
+    for (const event of EVENTS) {
+      expect(config.hooks[event]).toHaveLength(1);
+      expect(config.hooks[event][0].hooks).toHaveLength(1);
+      const hook = config.hooks[event][0].hooks[0];
+      expect(hook.commandWindows).toContain(`'${ENTRY_PATH_B}'`);
+      expect(hook.commandWindows).not.toContain(ENTRY_PATH_A);
     }
   });
 });
