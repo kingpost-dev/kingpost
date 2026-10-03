@@ -65,8 +65,11 @@ describe("upsertCodexMcpConfig", () => {
     const content = readFileSync(join(dir, ".codex", "config.toml"), "utf8");
 
     expect(content).toContain("[mcp_servers.kingpost]");
-    expect(content).toContain(`command = "${process.execPath}"`);
-    expect(content).toContain(`args = ["${ENTRY_PATH_A}", "mcp"]`);
+    // TOML basic strings escape backslashes, so a Windows path is written as "C:\\Program Files\\…".
+    // JSON.stringify produces exactly that escaping for these characters; interpolating the raw path
+    // only matched on POSIX, where there are no backslashes (CI's windows-latest caught this).
+    expect(content).toContain(`command = ${JSON.stringify(process.execPath)}`);
+    expect(content).toContain(`args = [${JSON.stringify(ENTRY_PATH_A)}, "mcp"]`);
   });
 
   it("preserves unrelated existing content", () => {
