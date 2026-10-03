@@ -1,0 +1,34 @@
+name: CI
+
+# Runs the whole suite on every OS we ship to. The publish workflow only ever tested on Linux, so
+# Windows/macOS-only breakage (path handling, PowerShell launch quirks) reached users before CI.
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      # The CLI imports @kingpost/protocol's built output, and hook-launch.test.ts executes the built
+      # CLI itself (CI=true makes a missing build a hard failure rather than a skip).
+      - run: npm run build --workspace=packages/protocol
+      - run: npm run build --workspace=packages/cli
+      - run: npm run typecheck
+      - run: npm test
