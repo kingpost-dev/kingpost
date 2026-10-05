@@ -191,11 +191,7 @@ async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, 
         }))
       );
 
-      // diffSummary is embedded verbatim, including whatever raw message the underlying differ
-      // produced (e.g. json-schema-diff-validator's own AssertionError text) — this is the first
-      // place that text reaches an agent directly rather than just being stored. Cleaning up the
-      // differs' summary format is real, separate work (tracked, not done here); don't paper over
-      // it with truncation here, since that risks cutting a real diagnosis mid-sentence.
+      // diffSummary comes from the differs, which each produce a plain-language summary.
       return (
         `Breaking change to \`${filePath}\`: ${diffSummary ?? "unspecified change"}. ` +
         `Consumers: ${consumers.map((c) => c.path).join(", ")} (owners: ${owners.length > 0 ? owners.join(", ") : "unknown"}). ` +

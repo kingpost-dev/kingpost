@@ -30,6 +30,35 @@ describe("diffJsonSchema", () => {
     expect(diffJsonSchema(withEnum, narrowed).breaking).toBe(true);
   });
 
+  it("summarizes breaking changes in plain words, without the validator's raw assertion text", () => {
+    const withAge = JSON.stringify({
+      type: "object",
+      properties: { name: { type: "string" }, age: { type: "number" } },
+      required: ["name"],
+    });
+    const removed = diffJsonSchema(withAge, base);
+    expect(removed.summary).toBe("removes /properties/age");
+
+    const required = diffJsonSchema(withAge, JSON.stringify({ ...JSON.parse(withAge), required: ["name", "age"] }));
+    expect(required.summary).toBe('makes "age" required');
+
+    const retyped = diffJsonSchema(
+      withAge,
+      JSON.stringify({ ...JSON.parse(withAge), properties: { name: { type: "string" }, age: { type: "string" } } })
+    );
+    expect(retyped.summary).toBe('changes /properties/age/type to "string"');
+
+    for (const { summary } of [removed, required, retyped]) {
+      expect(summary).not.toContain("!==");
+      expect(summary).not.toContain("AssertionError");
+    }
+  });
+
+  it("falls back to the first line of an unrecognised validator message", () => {
+    // Guards the fallback path: never throw, never return the multi-line raw text.
+    expect(diffJsonSchema(base, JSON.stringify({ type: "object", properties: {} })).summary).not.toContain("\n");
+  });
+
   it("does not flag an added optional property as breaking", () => {
     const next = JSON.stringify({
       type: "object",
