@@ -100,7 +100,9 @@ function harnessCommand(force) {
   return ["codex", ["exec", "--skip-git-repo-check", "--dangerously-bypass-hook-trust", "--sandbox", "workspace-write", PROMPT], { env }];
 }
 
-const dir = mkdtempSync(join(tmpdir(), `kp-e2e-${harness}-`));
+// Resolve to the real path: on Windows runners tmpdir() is an 8.3 short path (C:\Users\RUNNER~1\...)
+// that Claude Code doesn't treat as inside the project, so it refuses to even read the contract.
+const dir = realpathSync.native(mkdtempSync(join(tmpdir(), `kp-e2e-${harness}-`)));
 console.log(`[${harness}] project dir: ${dir}`);
 try {
   mkdirSync(join(dir, "contracts"));
