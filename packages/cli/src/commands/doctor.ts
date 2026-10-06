@@ -102,6 +102,33 @@ function checkClaudeMcpConfig(cwd: string): Check {
   }
 }
 
+const CLAUDE_MCP_APPROVAL_DETAIL =
+  "Claude Code hasn't approved the project's .mcp.json server yet, so its MCP tools won't connect — run 'claude' in this directory and approve the kingpost MCP server when prompted";
+
+/** Reads the output of `claude mcp get kingpost`. Claude Code won't connect to a project-scope
+ * `.mcp.json` server until the user approves it, and reports that as "Pending approval". Returns
+ * null when the output says nothing about approval (approved, or an unfamiliar format) so an
+ * inconclusive answer never shows up as a failure. */
+export function parseClaudeMcpApproval(output: string): Check | null {
+  const label = "Claude Code approved the project's MCP server";
+  if (/pending approval/i.test(output)) return { label, ok: false, detail: CLAUDE_MCP_APPROVAL_DETAIL };
+  if (/status:/i.test(output)) return { label, ok: true };
+  return null;
+}
+
+// File-shape checks above can't see this: the entry can be perfectly written and still never run.
+// Asks Claude Code itself (its own `mcp get` is the only authoritative source for approval state);
+// any failure to ask (no `claude` on PATH, timeout) just skips the check.
+function checkClaudeMcpApproval(cwd: string): Check | null {
+  if (!existsSync(join(cwd, ".mcp.json"))) return null;
+  try {
+    const output = execSync("claude mcp get kingpost", { cwd, encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] });
+    return parseClaudeMcpApproval(output);
+  } catch {
+    return null;
+  }
+}
+
 // Same as checkClaudeMcpConfig, but for Codex's project-scope `.codex/config.toml`. Unlike the
 // Claude Code case, this project-scope override only takes effect if Codex has the project
 // marked trusted — an untrusted project skips the project-scope layer entirely and falls back to
@@ -201,6 +228,8 @@ export async function doctorCommand(cwd: string = process.cwd()): Promise<void> 
   checks.push(checkClaudePlugin(cwd));
   checks.push(checkClaudeResolvedPathHooks(cwd));
   checks.push(checkClaudeMcpConfig(cwd));
+  const approval = checkClaudeMcpApproval(cwd);
+  if (approval) checks.push(approval);
   checks.push(checkCodexPluginSupport());
   checks.push(checkCodexPlugin());
   checks.push(checkCodexMcp());

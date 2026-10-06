@@ -42,5 +42,6 @@ export async function initCommand(name: string, opts: { serverUrl?: string; cwd?
   console.log(`Kingpost project "${name}" created.`);
   console.log(`Invite link:    ${serverUrl}/join/${projectId}#${token}`);
   console.log(`Dashboard:      ${serverUrl}/p/${projectId}#${token}`);
+  console.log(`Claude Code will ask you to approve the project's kingpost MCP server the first time you run 'claude' here — approve it, or the kingpost tools won't connect.`);
   console.log(`Next: install the plugin for your own harness (see the README's "Starting a new project" section for the exact commands), then run 'kingpost doctor' to confirm it's working.`);
 }

@@ -49,6 +49,7 @@ export async function joinCommand(link: string, opts: { name: string; cwd?: stri
 
   console.log(`Joined project ${projectId} as ${opts.name}.`);
   console.log(`Dashboard: ${serverUrl}/p/${projectId}#${token}`);
+  console.log(`Claude Code will ask you to approve the project's kingpost MCP server the first time you run 'claude' here — approve it, or the kingpost tools won't connect.`);
 
   const hasClaude = which("claude");
   const hasCodex = which("codex");
