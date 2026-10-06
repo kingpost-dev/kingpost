@@ -1,12 +1,14 @@
-name: Nightly real-harness e2e
+name: E2E (real harnesses, scripted model)
 
-# Drives the REAL Claude Code and Codex CLIs against the real Kingpost server on every OS: a breaking
-# edit to a consumed contract must be blocked by the hook, and allowed with KINGPOST_FORCE=1. It spends
-# a few cents of API credit per run, so it only runs on a schedule or by hand. Never add a
-# pull_request trigger here: it would expose the API keys to fork PRs.
+# Drives the REAL Claude Code and Codex CLIs against the real Kingpost server on every OS, with the model
+# replaced by a local scripted stand-in (scripts/fake-model). Kingpost's hooks, blocking and plumbing all run
+# for real inside the real harness; only the model's choices are scripted, so this is free, deterministic and
+# needs no secrets, which is why it is safe to run on every push and on pull requests from forks.
+# The real-model run lives in nightly-e2e.yml.
 on:
-  schedule:
-    - cron: "17 7 * * *"
+  push:
+    branches: [main]
+  pull_request: {}
   workflow_dispatch: {}
 
 permissions:
@@ -16,7 +18,7 @@ jobs:
   e2e:
     name: ${{ matrix.harness }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -35,9 +37,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.harness }}" = "claude" ]; then npm i -g @anthropic-ai/claude-code; else npm i -g @openai/codex; fi
-      - name: Run the e2e scenario
+      - name: Run the e2e scenario (scripted model)
         run: node scripts/e2e-real-harness.mjs ${{ matrix.harness }}
         env:
-          KINGPOST_E2E_MODEL: real
-          ANTHROPIC_API_KEY: ${{ matrix.harness == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
-          OPENAI_API_KEY: ${{ matrix.harness == 'codex' && secrets.OPENAI_API_KEY || '' }}
+          KINGPOST_E2E_MODEL: fake

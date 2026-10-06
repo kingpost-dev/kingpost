@@ -5,10 +5,17 @@
 //
 //   node scripts/e2e-real-harness.mjs <claude|codex>
 //
-// Needs the built CLI (npm run build), the harness binary on PATH, and its API key in the
-// environment (ANTHROPIC_API_KEY / OPENAI_API_KEY). Creates a throwaway project on the server
-// (KINGPOST_E2E_SERVER, default https://app.kingpost.dev); the API has no project delete.
-import { spawnSync } from "node:child_process";
+// Two modes (KINGPOST_E2E_MODEL):
+//   fake (default) the harness talks to a local scripted model (scripts/fake-model): free, deterministic,
+//                  needs no API key. Everything Kingpost does (hooks, blocking, MCP) still runs for real
+//                  inside the real harness; only the model's choices are scripted.
+//   real           the harness uses its real model and API key (ANTHROPIC_API_KEY / OPENAI_API_KEY). This
+//                  is the only mode that can notice a real model choosing a shell write over the edit tool.
+//
+// Needs the built CLI (npm run build) and the harness binary on PATH. Creates a throwaway project on the
+// server (KINGPOST_E2E_SERVER, default https://app.kingpost.dev); the API has no project delete.
+import { spawn, spawnSync } from "node:child_process";
+import { startFakeModel } from "./fake-model/server.mjs";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,6 +26,7 @@ if (harness !== "claude" && harness !== "codex") {
   process.exit(2);
 }
 
+const fakeMode = process.env.KINGPOST_E2E_MODEL !== "real";
 const root = resolve(import.meta.dirname, "..");
 const cliEntry = join(root, "packages/cli/dist/index.js");
 
@@ -39,6 +47,26 @@ const run = (cmd, args, { cwd, env = {}, timeout = 240_000 } = {}) =>
   process.platform === "win32"
     ? spawnSync([cmd, ...args.map(quote)].join(" "), { cwd, encoding: "utf8", timeout, shell: true, env: { ...process.env, ...env } })
     : spawnSync(cmd, args, { cwd, encoding: "utf8", timeout, env: { ...process.env, ...env } });
+
+// Async variant for harness runs: in fake mode the scripted model server lives in THIS process, and a
+// synchronous spawn would block the event loop so the server could never answer (the harness would hang).
+const runAsync = (cmd, args, { cwd, env = {}, timeout = 240_000 } = {}) =>
+  new Promise((resolveRun) => {
+    const full = { ...process.env, ...env };
+    const child =
+      process.platform === "win32"
+        ? spawn([cmd, ...args.map(quote)].join(" "), { cwd, shell: true, env: full, stdio: ["ignore", "pipe", "pipe"] })
+        : spawn(cmd, args, { cwd, env: full, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    const timer = setTimeout(() => child.kill("SIGKILL"), timeout);
+    child.on("close", (status) => {
+      clearTimeout(timer);
+      resolveRun({ status, stdout, stderr });
+    });
+  });
 
 function fail(msg, detail) {
   console.error(`FAIL [${harness}]: ${msg}`);
@@ -85,8 +113,20 @@ async function api(config, token, method, path, body) {
 // Codex only loads a project's .codex/hooks.json once the project is trusted (interactively that's
 // the /hooks prompt). Give each run its own CODEX_HOME with this directory pre-trusted, so the run is
 // isolated from (and never edits) the caller's real Codex config.
-function prepareCodexHome(projectDir) {
+function prepareCodexHome(projectDir, fakeUrl) {
   const home = mkdtempSync(join(tmpdir(), "kp-e2e-codex-home-"));
+  const trust = `[projects.${JSON.stringify(realpathSync(projectDir))}]\ntrust_level = "trusted"\n`;
+  if (fakeUrl) {
+    // Codex learns a model's tool set (e.g. freeform apply_patch) from a model catalog, so the fake model
+    // ships its own catalog entry, and a custom provider points the Responses API at the fake server.
+    copyFileSync(join(root, "scripts/fake-model/codex-catalog.json"), join(home, "catalog.json"));
+    writeFileSync(
+      join(home, "config.toml"),
+      `model_provider = "fake"\nmodel = "kp-fake"\nmodel_catalog_json = ${JSON.stringify(join(home, "catalog.json"))}\n` +
+        `[model_providers.fake]\nname = "fake"\nbase_url = "${fakeUrl}/v1"\nwire_api = "responses"\nenv_key = "FAKE_KEY"\n${trust}`
+    );
+    return home;
+  }
   if (process.env.OPENAI_API_KEY) {
     const login = spawnSync("codex", ["login", "--with-api-key"], {
       input: process.env.OPENAI_API_KEY, encoding: "utf8", shell: process.platform === "win32", env: { ...process.env, CODEX_HOME: home },
@@ -97,7 +137,7 @@ function prepareCodexHome(projectDir) {
     if (!existsSync(realAuth)) fail("no OPENAI_API_KEY and no existing Codex login to copy");
     copyFileSync(realAuth, join(home, "auth.json"));
   }
-  writeFileSync(join(home, "config.toml"), `[projects.${JSON.stringify(realpathSync(projectDir))}]\ntrust_level = "trusted"\n`);
+  writeFileSync(join(home, "config.toml"), trust);
   return home;
 }
 
@@ -109,9 +149,12 @@ function costSummary(output) {
 }
 
 let codexHome;
+let fake;
 function harnessCommand(force) {
   const env = force ? { KINGPOST_FORCE: "1" } : {};
   if (harness === "codex") { env.CODEX_HOME = codexHome; if (process.env.KINGPOST_E2E_DEBUG) env.RUST_LOG = "debug"; }
+  if (fake && harness === "claude") Object.assign(env, { ANTHROPIC_BASE_URL: fake.url, ANTHROPIC_API_KEY: "fake-key", ANTHROPIC_AUTH_TOKEN: "" });
+  if (fake && harness === "codex") env.FAKE_KEY = "fake-key";
   if (harness === "claude") {
     return [
       "claude",
@@ -138,7 +181,26 @@ try {
   writeFileSync(join(dir, CONTRACT), ORIGINAL);
   writeFileSync(join(dir, "src/uses-user.ts"), `import type { User } from "../contracts/user.json";\nexport const u: User | null = null;\n`);
 
-  if (harness === "codex") codexHome = prepareCodexHome(dir);
+  if (fakeMode) {
+    const ageBlock = `    "age": {\n      "type": "number"\n    },\n`;
+    fake = await startFakeModel({
+      // Read the contract, then remove the age property: the same edit the real-model prompt asks for.
+      claudeSteps: [
+        { tool: "Read", input: { file_path: join(dir, CONTRACT) } },
+        { tool: "Edit", input: { file_path: join(dir, CONTRACT), old_string: ageBlock, new_string: "" } },
+        { text: "Done." },
+      ],
+      codexSteps: [
+        { tool: "exec_command", input: { cmd: `cat ${CONTRACT}` } },
+        {
+          tool: "apply_patch",
+          input: `*** Begin Patch\n*** Update File: ${CONTRACT}\n@@\n     "name": {\n       "type": "string"\n     },\n-    "age": {\n-      "type": "number"\n-    },\n     "email": {\n*** End Patch\n`,
+        },
+        { text: "Done." },
+      ],
+    });
+  }
+  if (harness === "codex") codexHome = prepareCodexHome(dir, fake?.url);
   const init = run("node", [cliEntry, "init", "--name", `e2e-${harness}-${Date.now()}`, "--server-url", server], { cwd: dir });
   if (init.status !== 0) fail("kingpost init failed", init.stdout + init.stderr);
 
@@ -150,12 +212,15 @@ try {
 
   // 1. Without the override the hook must block, leaving the file untouched.
   const [cmd, args, opts] = harnessCommand(false);
-  const blocked = run(cmd, args, { cwd: dir, ...opts });
+  if (fake) fake.requests.length = 0;
+  const blocked = await runAsync(cmd, args, { cwd: dir, ...opts });
   const afterBlock = readFileSync(join(dir, CONTRACT), "utf8");
-  const blockOutput = (blocked.stdout ?? "") + (blocked.stderr ?? "");
+  // In fake mode the strongest evidence is what the harness sent BACK to the model: the tool result must
+  // carry the hook's deny text. Appending it lets the checks below see it like any other output.
+  const blockOutput = (blocked.stdout ?? "") + (blocked.stderr ?? "") + (fake ? `\n[requests sent to the fake model]\n${JSON.stringify(fake.requests.map((r) => r.body))}` : "");
   if (process.env.KINGPOST_E2E_DEBUG) writeFileSync("/tmp/e2e-block-output.txt", blockOutput);
   console.log(`[${harness}] block run exit=${blocked.status}, tools used: ${toolsUsed(blockOutput)}\n${blockOutput.slice(-1500)}`);
-  console.log(costSummary(blockOutput));
+  if (!fakeMode) console.log(costSummary(blockOutput));
   if (afterBlock !== ORIGINAL) fail(`the breaking edit was NOT blocked: the contract changed on disk (tools used: ${toolsUsed(blockOutput)})`, blockOutput);
   // An unchanged file alone proves nothing: the model may have stopped, or fumbled the patch, before
   // the hook ever ran. Require the hook's own deny text to have reached the harness.
@@ -165,16 +230,17 @@ try {
 
   // 2. Control: with KINGPOST_FORCE=1 the same request must go through.
   const [cmd2, args2, opts2] = harnessCommand(true);
-  const forced = run(cmd2, args2, { cwd: dir, ...opts2 });
-  console.log(costSummary((forced.stdout ?? "") + (forced.stderr ?? "")));
+  const forced = await runAsync(cmd2, args2, { cwd: dir, ...opts2 });
+  if (!fakeMode) console.log(costSummary((forced.stdout ?? "") + (forced.stderr ?? "")));
   const afterForce = readFileSync(join(dir, CONTRACT), "utf8");
   console.log(`[${harness}] force run exit=${forced.status}, tools used: ${toolsUsed((forced.stdout ?? "") + (forced.stderr ?? ""))}\n${(forced.stdout ?? "").slice(-800)}`);
   if (afterForce === ORIGINAL || JSON.parse(afterForce).properties.age !== undefined) {
     fail("control run: with KINGPOST_FORCE=1 the edit still didn't happen, so the block run proves nothing", (forced.stdout ?? "") + (forced.stderr ?? ""));
   }
 
-  console.log(`PASS [${harness}]: breaking edit blocked, and allowed with KINGPOST_FORCE=1`);
+  console.log(`PASS [${harness}, ${fakeMode ? "fake" : "real"} model]: breaking edit blocked, and allowed with KINGPOST_FORCE=1`);
 } finally {
+  await fake?.close();
   rmSync(dir, { recursive: true, force: true });
   if (codexHome) rmSync(codexHome, { recursive: true, force: true });
 }
