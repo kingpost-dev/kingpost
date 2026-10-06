@@ -8,6 +8,7 @@ import * as apiModule from "../api.js";
 import { diffJsonSchema } from "../differs/json-schema.js";
 import { diffDrizzle } from "../differs/drizzle.js";
 import { log } from "./log.js";
+import { emptyDelta } from "../test-helpers/empty-delta.js";
 
 // Keeps the KINGPOST_FORCE override tests from appending to the real ~/.kingpost/log, and lets
 // them assert the override was logged.
@@ -38,7 +39,7 @@ describe("handleSessionStart", () => {
     vi.spyOn(apiModule.ApiClient.prototype, "listQuestions").mockResolvedValue({ questions: [] });
     vi.spyOn(apiModule.ApiClient.prototype, "listFindings").mockResolvedValue({ findings: [] });
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
-      delta: { contractsChanged: [], questionsForMe: [], answersToMe: [], findings: [], overlappingClaims: [] },
+      delta: emptyDelta(),
       cursor: 0,
     });
   });
@@ -47,6 +48,34 @@ describe("handleSessionStart", () => {
     const out = await handleSessionStart({ harness: "claude", hookEventName: "SessionStart", cwd });
     expect(out).toContain("From teammates' agents");
     expect(out).toContain("sam");
+  });
+
+  it("delivers answers and proposals that arrived while the session was closed, without repeating the brief's content", async () => {
+    // Regression: getDelta advances the agent's cursor, and SessionStart used to discard what it returned,
+    // so an answer to this agent's own question (no longer "open", so absent from the brief) was lost.
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
+      delta: {
+        contractsChanged: [{ contract: { path: "contracts/api.json" }, version: { version: 2, breaking: false } }],
+        questionsForMe: [],
+        answersToMe: [{ question: { id: "q1" }, answer: { text: "Use OAuth with PKCE" } }],
+        findings: [],
+        overlappingClaims: [],
+        proposalsForMe: [{ proposal: { id: "p1", rationale: "drop age" }, contract: { path: "contracts/user.json" } }],
+        proposalsAcceptedForMe: [],
+      },
+      cursor: 5,
+    } as any);
+    const out = await handleSessionStart({ harness: "claude", hookEventName: "SessionStart", cwd });
+    expect(out).toContain("Since your last session:");
+    expect(out).toContain("Answered: [q1] Use OAuth with PKCE");
+    expect(out).toContain("Proposal for you: [p1] change to contracts/user.json");
+    // The brief already lists contracts, so the delta's contract line must not be repeated.
+    expect(out).not.toContain("Contract updated");
+  });
+
+  it("adds no 'since your last session' section when nothing personal arrived", async () => {
+    const out = await handleSessionStart({ harness: "claude", hookEventName: "SessionStart", cwd });
+    expect(out).not.toContain("Since your last session");
   });
 });
 

@@ -53,7 +53,7 @@
     "text",
     "image"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "supports_reasoning_effort_updates": true,
    "node_repl_auto_review_required": false,

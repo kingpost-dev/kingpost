@@ -129,7 +129,7 @@ export async function handleSessionStart(input: HookInput): Promise<string> {
     ctx.client.listFindings(),
   ]);
 
-  await fetchAndCacheDelta(ctx, input.cwd);
+  const delta = await fetchAndCacheDelta(ctx, input.cwd);
 
   const others = agents.filter((a) => a.id !== ctx.agentId);
   const openQuestions = questions.filter(
@@ -138,7 +138,16 @@ export async function handleSessionStart(input: HookInput): Promise<string> {
   const recentFindings = [...findings].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const brief = renderBrief({ agents: others, contracts, openQuestions, recentFindings });
-  return TEAMMATE_LABEL + brief;
+
+  // Fetching the delta advances this agent's server-side cursor, so whatever it holds is never delivered
+  // again. The brief already covers contracts, open questions, findings and teammates, but NOT things
+  // addressed to this agent personally (answers to its questions, proposals) that arrived while its
+  // session was closed; dropping the delta here silently lost those.
+  const missed = deltaIsEmpty(delta)
+    ? []
+    : renderDeltaLines({ ...delta, contractsChanged: [], questionsForMe: [], findings: [], overlappingClaims: [] });
+  const sinceLastSession = missed.length === 0 ? "" : `\n\nSince your last session:\n${missed.join("\n")}`;
+  return TEAMMATE_LABEL + brief + sinceLastSession;
 }
 
 export async function handleUserPromptSubmit(input: HookInput): Promise<string> {

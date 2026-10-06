@@ -59,7 +59,8 @@ function responsesStream(res, step) {
   if (step.tool === "apply_patch") {
     item = { type: "custom_tool_call", id: id("ctc"), call_id: id("call"), name: "apply_patch", input: step.input };
   } else if (step.tool) {
-    item = { type: "function_call", id: id("fc"), call_id: id("call"), name: step.tool, arguments: JSON.stringify(step.input) };
+    // MCP tools are offered in a namespace (mcp__<server>) and must be called with it plus the bare name.
+    item = { type: "function_call", id: id("fc"), call_id: id("call"), name: step.tool, arguments: JSON.stringify(step.input), ...(step.namespace ? { namespace: step.namespace } : {}) };
   } else {
     item = { type: "message", id: id("msg"), role: "assistant", content: [{ type: "output_text", text: step.text }] };
   }
@@ -76,7 +77,9 @@ function countResponsesToolOutputs(input) {
   return (input ?? []).filter((i) => i.type === "function_call_output" || i.type === "custom_tool_call_output").length;
 }
 
-export async function startFakeModel({ claudeSteps = [], codexSteps = [] } = {}) {
+export async function startFakeModel(initial = {}) {
+  // The scripts can be swapped between agent sessions with setSteps().
+  let scripts = { claudeSteps: initial.claudeSteps ?? [], codexSteps: initial.codexSteps ?? [] };
   const requests = [];
   const server = createServer((req, res) => {
     let body = "";
@@ -94,7 +97,7 @@ export async function startFakeModel({ claudeSteps = [], codexSteps = [] } = {})
         // Claude Code also makes small side requests (titles, quota probes) with no tools; answer those
         // with plain text and keep the scripted steps for the main conversation.
         const isMain = Array.isArray(json.tools) && json.tools.length > 0;
-        const step = isMain ? claudeSteps[Math.min(countAnthropicToolResults(json.messages), claudeSteps.length - 1)] : { text: "ok" };
+        const step = isMain ? scripts.claudeSteps[Math.min(countAnthropicToolResults(json.messages), scripts.claudeSteps.length - 1)] : { text: "ok" };
         if (json.stream === false) {
           res.writeHead(200, { "content-type": "application/json" });
           return res.end(JSON.stringify({
@@ -107,7 +110,7 @@ export async function startFakeModel({ claudeSteps = [], codexSteps = [] } = {})
       }
       if (req.method === "POST" && req.url.includes("/responses")) {
         const isMain = Array.isArray(json.tools) && json.tools.length > 0;
-        const step = isMain ? codexSteps[Math.min(countResponsesToolOutputs(json.input), codexSteps.length - 1)] : { text: "ok" };
+        const step = isMain ? scripts.codexSteps[Math.min(countResponsesToolOutputs(json.input), scripts.codexSteps.length - 1)] : { text: "ok" };
         return responsesStream(res, step);
       }
       res.writeHead(404, { "content-type": "application/json" });
@@ -118,6 +121,7 @@ export async function startFakeModel({ claudeSteps = [], codexSteps = [] } = {})
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     requests,
+    setSteps: (next) => { scripts = { claudeSteps: next.claudeSteps ?? scripts.claudeSteps, codexSteps: next.codexSteps ?? scripts.codexSteps }; },
     close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(resolve); }),
   };
 }

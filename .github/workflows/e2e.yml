@@ -41,3 +41,7 @@ jobs:
         run: node scripts/e2e-real-harness.mjs ${{ matrix.harness }}
         env:
           KINGPOST_E2E_MODEL: fake
+      - name: Run the team scenario (two agents, scripted model)
+        run: node scripts/e2e-team.mjs ${{ matrix.harness }}
+        env:
+          KINGPOST_E2E_MODEL: fake
