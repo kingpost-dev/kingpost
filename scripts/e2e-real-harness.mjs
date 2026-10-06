@@ -13,7 +13,7 @@
 //                  is the only mode that can notice a real model choosing a shell write over the edit tool.
 //
 // Needs the built CLI (npm run build) and the harness binary on PATH. Creates a throwaway project on the
-// server (KINGPOST_E2E_SERVER, default https://app.kingpost.dev); the API has no project delete.
+// server (KINGPOST_E2E_SERVER, default https://app.kingpost.dev) and deletes it again when it finishes.
 import { spawn, spawnSync } from "node:child_process";
 import { startFakeModel } from "./fake-model/server.mjs";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -68,14 +68,29 @@ const runAsync = (cmd, args, { cwd, env = {}, timeout = 240_000 } = {}) =>
     });
   });
 
+// Failures throw so the cleanup in the `finally` below always runs (an exit here would skip it and leak
+// the throwaway project); the catch at the bottom reports and sets the exit code.
+class Failure extends Error {
+  constructor(msg, detail) {
+    super(msg);
+    this.detail = detail;
+  }
+}
 function fail(msg, detail) {
-  console.error(`FAIL [${harness}]: ${msg}`);
-  if (detail) console.error(String(detail).slice(-8000));
+  throw new Failure(msg, detail);
+}
+
+function reportFailure(e) {
+  if (!(e instanceof Failure)) {
+    console.error(`FAIL [${harness}]: unexpected error: ${e instanceof Error ? e.stack : e}`);
+    return;
+  }
+  console.error(`FAIL [${harness}]: ${e.message}`);
+  if (e.detail) console.error(String(e.detail).slice(-8000));
   // The hook swallows its own errors into this log (it must never break the agent), so a silent
   // fail-open shows up here and nowhere else.
   const log = join(homedir(), ".kingpost", "log");
   if (existsSync(log)) console.error(`--- ${log} (tail) ---\n${readFileSync(log, "utf8").slice(-3000)}`);
-  process.exit(1);
 }
 
 // Which tools did the agent actually use? A contract changed by a shell write is invisible to Kingpost,
@@ -150,6 +165,23 @@ function costSummary(output) {
 
 let codexHome;
 let fake;
+let project; // { config, token } once init has created the throwaway project
+
+// Best-effort cleanup: never mask the test result. A server that predates DELETE /api/projects/:id answers
+// 404/405, in which case the project is simply left behind, as it was before the endpoint existed.
+async function deleteProject() {
+  if (!project) return;
+  try {
+    const res = await fetch(`${project.config.serverUrl}/api/projects/${project.config.projectId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${project.token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) console.warn(`[${harness}] couldn't delete the throwaway project ${project.config.projectId} (HTTP ${res.status})`);
+  } catch (e) {
+    console.warn(`[${harness}] couldn't delete the throwaway project: ${e instanceof Error ? e.message : e}`);
+  }
+}
 function harnessCommand(force) {
   const env = force ? { KINGPOST_FORCE: "1" } : {};
   if (harness === "codex") { env.CODEX_HOME = codexHome; if (process.env.KINGPOST_E2E_DEBUG) env.RUST_LOG = "debug"; }
@@ -207,6 +239,7 @@ try {
   const config = JSON.parse(readFileSync(join(dir, ".kingpost.json"), "utf8"));
   const token = JSON.parse(readFileSync(join(homedir(), ".config", "kingpost", "credentials.json"), "utf8"))[config.projectId]?.token;
   if (!config.projectId || !token) fail("init didn't produce a project config and credential");
+  project = { config, token };
   const { contract } = await api(config, token, "PUT", "/contracts", { path: CONTRACT, content: ORIGINAL, updatedBy: "e2e", format: "json-schema" });
   await api(config, token, "POST", `/contracts/${contract.id}/consumers`, { path: "src/uses-user.ts", agentId: null, declared: true });
 
@@ -239,8 +272,13 @@ try {
   }
 
   console.log(`PASS [${harness}, ${fakeMode ? "fake" : "real"} model]: breaking edit blocked, and allowed with KINGPOST_FORCE=1`);
+} catch (e) {
+  reportFailure(e);
+  process.exitCode = 1;
 } finally {
+  await deleteProject();
   await fake?.close();
   rmSync(dir, { recursive: true, force: true });
   if (codexHome) rmSync(codexHome, { recursive: true, force: true });
 }
+process.exit(process.exitCode ?? 0);
