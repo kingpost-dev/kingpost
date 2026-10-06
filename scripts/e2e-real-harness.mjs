@@ -42,8 +42,23 @@ const run = (cmd, args, { cwd, env = {}, timeout = 240_000 } = {}) =>
 
 function fail(msg, detail) {
   console.error(`FAIL [${harness}]: ${msg}`);
-  if (detail) console.error(detail);
+  if (detail) console.error(String(detail).slice(-8000));
+  // The hook swallows its own errors into this log (it must never break the agent), so a silent
+  // fail-open shows up here and nowhere else.
+  const log = join(homedir(), ".kingpost", "log");
+  if (existsSync(log)) console.error(`--- ${log} (tail) ---\n${readFileSync(log, "utf8").slice(-3000)}`);
   process.exit(1);
+}
+
+// Which tools did the agent actually use? A contract changed by a shell write is invisible to Kingpost,
+// so "the edit wasn't blocked" means something different when the model went around the edit tool.
+function toolsUsed(output) {
+  const names = [...output.matchAll(/"type":"tool_use","id":"[^"]*","name":"([A-Za-z_]+)"/g)].map((m) => m[1]);
+  if (harness === "codex") {
+    if (/apply patch|apply_patch/i.test(output)) names.push("apply_patch");
+    if (/\bexec\b|succeeded in \d+ms/.test(output)) names.push("shell");
+  }
+  return [...new Set(names)].join(", ") || "(none detected)";
 }
 
 // The CLI ships as one bundle, so talk to the REST API directly. Retries ride out a cold server.
@@ -86,6 +101,13 @@ function prepareCodexHome(projectDir) {
   return home;
 }
 
+// Claude reports its own USD cost; Codex only reports tokens.
+function costSummary(output) {
+  const usd = [...output.matchAll(/"total_cost_usd":([0-9.]+)/g)].map((m) => Number(m[1]));
+  const tokens = [...output.matchAll(/tokens used\s*\n?\s*([0-9,]+)/g)].map((m) => m[1]);
+  return usd.length ? `COST [${harness}] $${usd.at(-1).toFixed(4)}` : tokens.length ? `COST [${harness}] ${tokens.at(-1)} tokens` : `COST [${harness}] unknown`;
+}
+
 let codexHome;
 function harnessCommand(force) {
   const env = force ? { KINGPOST_FORCE: "1" } : {};
@@ -93,11 +115,17 @@ function harnessCommand(force) {
   if (harness === "claude") {
     return [
       "claude",
-      ["-p", PROMPT, "--model", "claude-haiku-4-5-20251001", "--max-turns", "10", "--permission-mode", "acceptEdits", "--output-format", "stream-json", "--verbose"],
+      ["-p", PROMPT, "--model", "claude-haiku-4-5-20251001", "--max-turns", "10", "--permission-mode", "acceptEdits", "--output-format", "stream-json", "--verbose", "--disallowedTools", "Bash"],
       { env },
     ];
   }
-  return ["codex", ["exec", "--skip-git-repo-check", "--dangerously-bypass-hook-trust", "--sandbox", "workspace-write", PROMPT], { env }];
+  return ["codex", [
+    "exec", "--skip-git-repo-check", "--dangerously-bypass-hook-trust",
+    // CI runners are throwaway machines, and Codex's own sandbox can't start on them (its shell reads get
+    // refused), so there it runs unsandboxed. Locally keep the sandbox.
+    "--sandbox", process.env.CI ? "danger-full-access" : "workspace-write",
+    PROMPT,
+  ], { env }];
 }
 
 // Resolve to the real path: on Windows runners tmpdir() is an 8.3 short path (C:\Users\RUNNER~1\...)
@@ -126,8 +154,9 @@ try {
   const afterBlock = readFileSync(join(dir, CONTRACT), "utf8");
   const blockOutput = (blocked.stdout ?? "") + (blocked.stderr ?? "");
   if (process.env.KINGPOST_E2E_DEBUG) writeFileSync("/tmp/e2e-block-output.txt", blockOutput);
-  console.log(`[${harness}] block run exit=${blocked.status}\n${blockOutput.slice(-1500)}`);
-  if (afterBlock !== ORIGINAL) fail("the breaking edit was NOT blocked: the contract changed on disk", afterBlock);
+  console.log(`[${harness}] block run exit=${blocked.status}, tools used: ${toolsUsed(blockOutput)}\n${blockOutput.slice(-1500)}`);
+  console.log(costSummary(blockOutput));
+  if (afterBlock !== ORIGINAL) fail(`the breaking edit was NOT blocked: the contract changed on disk (tools used: ${toolsUsed(blockOutput)})`, blockOutput);
   // An unchanged file alone proves nothing: the model may have stopped, or fumbled the patch, before
   // the hook ever ran. Require the hook's own deny text to have reached the harness.
   if (!blockOutput.includes("Breaking change to `contracts/user.json`")) {
@@ -137,8 +166,9 @@ try {
   // 2. Control: with KINGPOST_FORCE=1 the same request must go through.
   const [cmd2, args2, opts2] = harnessCommand(true);
   const forced = run(cmd2, args2, { cwd: dir, ...opts2 });
+  console.log(costSummary((forced.stdout ?? "") + (forced.stderr ?? "")));
   const afterForce = readFileSync(join(dir, CONTRACT), "utf8");
-  console.log(`[${harness}] force run exit=${forced.status}\n${(forced.stdout ?? "").slice(-800)}`);
+  console.log(`[${harness}] force run exit=${forced.status}, tools used: ${toolsUsed((forced.stdout ?? "") + (forced.stderr ?? ""))}\n${(forced.stdout ?? "").slice(-800)}`);
   if (afterForce === ORIGINAL || JSON.parse(afterForce).properties.age !== undefined) {
     fail("control run: with KINGPOST_FORCE=1 the edit still didn't happen, so the block run proves nothing", (forced.stdout ?? "") + (forced.stderr ?? ""));
   }
