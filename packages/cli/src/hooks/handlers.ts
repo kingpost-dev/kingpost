@@ -66,14 +66,18 @@ async function detectBreakingChange(
     })();
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), LOOKUP_TIMEOUT_MS));
     const previousContent = await Promise.race([lookup, timeout]);
-    if (!previousContent) return { breaking: false };
+    if (!previousContent) {
+      log(`breaking-change check for ${path}: no previous version found within ${LOOKUP_TIMEOUT_MS}ms (slow lookup, or the contract isn't registered yet), not blocking`);
+      return { breaking: false };
+    }
 
     const result =
       format === "json-schema" ? diffJsonSchema(previousContent, newContent) :
       format === "openapi" ? await diffOpenApi(previousContent, newContent) :
       diffDrizzle(previousContent, newContent);
     return { breaking: result.breaking, diffSummary: result.summary };
-  } catch {
+  } catch (e) {
+    log(`breaking-change check for ${path} failed (${e instanceof Error ? e.message : String(e)}), not blocking`);
     return { breaking: false };
   }
 }
@@ -163,7 +167,10 @@ const BLOCK_CHECK_TIMEOUT_MS = 2500;
  * posture as detectBreakingChange). */
 async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, proposedContent: string): Promise<string | null> {
   const token = getToken(config.projectId);
-  if (!token) return null;
+  if (!token) {
+    log(`block check for ${filePath}: no credential for project ${config.projectId}, not blocking`);
+    return null;
+  }
   const client = new ApiClient(config.serverUrl, config.projectId, token);
 
   try {
@@ -178,9 +185,15 @@ async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, 
       // this one extra call — it's reused verbatim by the (unrelated) PostToolUse publish path too.
       const { contracts } = await client.listContracts();
       const contract = contracts.find((c) => c.path === filePath);
-      if (!contract) return null;
+      if (!contract) {
+        log(`block check for ${filePath}: breaking, but the contract isn't in the registry, not blocking`);
+        return null;
+      }
       const [{ consumers }, { agents }] = await Promise.all([client.listConsumers(contract.id), client.listAgents()]);
-      if (consumers.length === 0) return null;
+      if (consumers.length === 0) {
+        log(`block check for ${filePath}: breaking, but no consumers are registered, not blocking`);
+        return null;
+      }
 
       // Best-effort owner resolution: a consumer with a null or unknown agentId is simply left out.
       const userNameById = new Map(agents.map((a) => [a.id, a.userName]));
@@ -198,9 +211,20 @@ async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, 
         `Options: version it (\`v2\` path), propose via \`kingpost_propose\`, or edit consumers in the same change.`
       );
     })();
-    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), BLOCK_CHECK_TIMEOUT_MS));
-    return await Promise.race([check, timeout]);
-  } catch {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        log(`block check for ${filePath}: timed out after ${BLOCK_CHECK_TIMEOUT_MS}ms, not blocking`);
+        resolve(null);
+      }, BLOCK_CHECK_TIMEOUT_MS);
+    });
+    try {
+      return await Promise.race([check, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    log(`block check for ${filePath} failed (${e instanceof Error ? e.message : String(e)}), not blocking`);
     return null;
   }
 }
