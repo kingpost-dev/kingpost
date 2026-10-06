@@ -52,7 +52,8 @@ async function detectBreakingChange(
   client: ApiClient,
   path: string,
   format: "json-schema" | "openapi" | "drizzle" | "unknown",
-  newContent: string
+  newContent: string,
+  lookupTimeoutMs: number = LOOKUP_TIMEOUT_MS
 ): Promise<{ breaking: boolean; diffSummary?: string }> {
   if (format !== "json-schema" && format !== "openapi" && format !== "drizzle") return { breaking: false };
 
@@ -64,10 +65,10 @@ async function detectBreakingChange(
       const { versions } = await client.getContract(existing.id);
       return versions[0]?.content ?? null;
     })();
-    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), LOOKUP_TIMEOUT_MS));
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), lookupTimeoutMs));
     const previousContent = await Promise.race([lookup, timeout]);
     if (!previousContent) {
-      log(`breaking-change check for ${path}: no previous version found within ${LOOKUP_TIMEOUT_MS}ms (slow lookup, or the contract isn't registered yet), not blocking`);
+      log(`breaking-change check for ${path}: no previous version found within ${lookupTimeoutMs}ms (slow lookup, or the contract isn't registered yet), not blocking`);
       return { breaking: false };
     }
 
@@ -157,9 +158,15 @@ export type PreToolUseResult =
   | { kind: "context"; text: string }
   | { kind: "block"; reason: string };
 
-// Must stay under hook.ts's shared HANDLER_TIMEOUT_MS (3000ms), so a slow check resolves here as
-// "don't block" rather than being cut off by hook.ts's own race.
-const BLOCK_CHECK_TIMEOUT_MS = 2500;
+// The block check only does network work for an edit to a contract file, which is rare, and failing
+// open here silently lets a breaking change through. So it gets a far more generous budget than the
+// hooks that run on every prompt: a 1s lookup budget was measured expiring on cold CI runners (Windows
+// and macOS), and every one of those let a breaking edit to a consumed contract through.
+// BLOCK_CHECK_TIMEOUT_MS must stay under hook.ts's PRE_TOOL_USE_TIMEOUT_MS, so a slow check resolves here
+// as "don't block" (and logs why) rather than being cut off by hook.ts's own race.
+const BLOCK_CHECK_API_TIMEOUT_MS = 5000;
+const BLOCK_CHECK_LOOKUP_TIMEOUT_MS = 5000;
+const BLOCK_CHECK_TIMEOUT_MS = 8000;
 
 /** Returns a block reason if writing `proposedContent` to this contract would be a breaking change
  * AND the contract has consumers; null otherwise. Any failure, missing credential, or timeout is
@@ -171,12 +178,12 @@ async function findBreakingChangeBlock(config: ProjectConfig, filePath: string, 
     log(`block check for ${filePath}: no credential for project ${config.projectId}, not blocking`);
     return null;
   }
-  const client = new ApiClient(config.serverUrl, config.projectId, token);
+  const client = new ApiClient(config.serverUrl, config.projectId, token, BLOCK_CHECK_API_TIMEOUT_MS);
 
   try {
     const check = (async (): Promise<string | null> => {
       const format = detectFormat(filePath, proposedContent);
-      const { breaking, diffSummary } = await detectBreakingChange(client, filePath, format, proposedContent);
+      const { breaking, diffSummary } = await detectBreakingChange(client, filePath, format, proposedContent, BLOCK_CHECK_LOOKUP_TIMEOUT_MS);
       if (!breaking) return null;
 
       // A second listContracts() call: detectBreakingChange already looked one up internally

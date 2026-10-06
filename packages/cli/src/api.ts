@@ -3,11 +3,11 @@ import type { Agent, Contract, ContractVersion, Consumer, Question, Answer, Find
 const TIMEOUT_MS = 1500;
 
 export class ApiClient {
-  constructor(private serverUrl: string, private projectId: string, private token: string) {}
+  constructor(private serverUrl: string, private projectId: string, private token: string, private timeoutMs: number = TIMEOUT_MS) {}
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await fetch(`${this.serverUrl}/api/projects/${this.projectId}${path}`, {
         ...init,

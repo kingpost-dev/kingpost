@@ -100,7 +100,7 @@ describe("hookCommand — PreToolUse dispatch", () => {
     );
   });
 
-  it("a handler that outlives HANDLER_TIMEOUT_MS resolves to none (fail open), exiting 0", async () => {
+  it("a PreToolUse handler that outlives PRE_TOOL_USE_TIMEOUT_MS resolves to none (fail open), exiting 0", async () => {
     vi.useFakeTimers();
     try {
       vi.mocked(handlePreToolUse).mockImplementation(
@@ -109,7 +109,7 @@ describe("hookCommand — PreToolUse dispatch", () => {
       feedStdin(event("PreToolUse"));
 
       const done = hookCommand("codex");
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(9000);
       await done;
 
       expect(stdoutSpy).not.toHaveBeenCalled();

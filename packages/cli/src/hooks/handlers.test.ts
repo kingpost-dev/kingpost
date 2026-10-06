@@ -255,8 +255,24 @@ describe("handlePreToolUse — blocking breaking contract changes", () => {
         () => new Promise((resolve) => setTimeout(() => resolve({ consumers: [{ path: "src/a.ts", agentId: null } as any] }), 10_000))
       );
       const resultPromise = pre("contracts/schema.json", breakingSchema);
-      await vi.advanceTimersByTimeAsync(2500);
+      await vi.advanceTimersByTimeAsync(8000); // BLOCK_CHECK_TIMEOUT_MS
       expect(await resultPromise).toEqual({ kind: "none" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still blocks when the previous-version lookup is slow (3s), as on a cold CI runner", async () => {
+    // Regression: a 1s lookup budget expired on Windows/macOS CI runners, so the check failed open
+    // and a breaking edit to a consumed contract went through.
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(apiModule.ApiClient.prototype, "getContract").mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ contract: {} as any, versions: [{ content: previousSchema } as any] }), 3000))
+      );
+      const resultPromise = pre("contracts/schema.json", breakingSchema);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await resultPromise).kind).toBe("block");
     } finally {
       vi.useRealTimers();
     }

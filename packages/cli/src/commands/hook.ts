@@ -24,6 +24,9 @@ const STDIN_TIMEOUT_MS = 1500;
 // brief. Warm/cached calls finish far under this; Promise.race means the higher ceiling only
 // matters for the slow, rare case.
 const HANDLER_TIMEOUT_MS = 3000;
+// PreToolUse can block, and only does network work for contract-file edits (rare), so it gets a longer
+// ceiling than the hooks that run on every prompt. Must exceed handlers.ts's BLOCK_CHECK_TIMEOUT_MS.
+const PRE_TOOL_USE_TIMEOUT_MS = 9000;
 
 function readStdin(): Promise<string> {
   return new Promise((resolve) => {
@@ -72,7 +75,7 @@ export async function hookCommand(harness: Harness): Promise<void> {
     if (input.hookEventName === "PreToolUse") {
       const result = await Promise.race([
         handlePreToolUse(input),
-        new Promise<PreToolUseResult>((resolve) => setTimeout(() => resolve({ kind: "none" }), HANDLER_TIMEOUT_MS)),
+        new Promise<PreToolUseResult>((resolve) => setTimeout(() => resolve({ kind: "none" }), PRE_TOOL_USE_TIMEOUT_MS)),
       ]);
       exitCode = emitPreToolUse(result);
     } else {
