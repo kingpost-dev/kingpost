@@ -13,7 +13,9 @@ export function renderDeltaLines(delta: Delta): string[] {
   for (const a of delta.answersToMe) lines.push(`Answered: [${a.question.id}] ${a.answer.text}`);
   for (const f of delta.findings) lines.push(`Finding: ${f.finding.text}`);
   for (const s of delta.overlappingClaims) lines.push(`Heads up: another agent is touching ${s.claims.join(", ")}`);
-  for (const p of delta.proposalsForMe) lines.push(`Proposal for you: [${p.proposal.id}] change to ${p.contract.path} — ${p.proposal.rationale}`);
+  for (const p of delta.proposalsForMe) lines.push(
+      `Proposal for you: [${p.proposal.id}] change to ${p.contract.path} — ${p.proposal.rationale}. Read it with kingpost_proposal, then: if you own this contract, kingpost_accept it, or kingpost_reject it with a reason, or kingpost_reply; if you depend on it, kingpost_reply with any concern. Do this before you end your turn.`
+    );
   for (const p of delta.proposalsAcceptedForMe) lines.push(`Proposal accepted: [${p.proposal.id}] ${p.contract.path} is now v${p.version.version}`);
   for (const p of delta.proposalsRejectedForMe) {
     lines.push(`Proposal rejected: [${p.proposal.id}] change to ${p.contract.path} was turned down — ${p.proposal.rejectionReason ?? "no reason given"}`);

@@ -1,6 +1,6 @@
 {
   "name": "kingpost",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -18,7 +18,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@kingpost/protocol": "^0.1.5",
+    "@kingpost/protocol": "^0.1.6",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "commander": "^12.1.0",
     "json-schema-diff-validator": "^0.4.2",

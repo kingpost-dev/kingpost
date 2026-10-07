@@ -1,0 +1,46 @@
+name: Priorities e2e (real models)
+
+# Does a real model follow Kingpost's priority rules (the AGENTS.md block `kingpost init` writes)? It does the human's
+# task first, ignores a teammate message that tells it to delete files, and, per the "clear your inbox" rule, handles a
+# proposal about its contract and answers a question addressed to it. Hard checks fail the run; the behaviours are
+# reported in the job summary and never fail it (a model that ignores them is a finding, not a flaky test).
+#
+# Real models cost money (about $0.4 per Claude run on Sonnet, cents for Codex), so this runs weekly and on demand,
+# not on every push. Claude uses Sonnet because Haiku rarely loads Kingpost's tools at all, which makes the result
+# about the model, not the wording. Never add a pull_request trigger: it would expose the API keys to fork PRs.
+on:
+  schedule:
+    - cron: "31 9 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  priorities:
+    name: ${{ matrix.harness }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [claude, codex]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/protocol
+      - run: npm run build --workspace=packages/cli
+      - name: Install the harness CLI
+        run: |
+          if [ "${{ matrix.harness }}" = "claude" ]; then npm i -g @anthropic-ai/claude-code; else npm i -g @openai/codex; fi
+      - name: Run the priorities scorecard
+        run: node scripts/e2e-priorities.mjs ${{ matrix.harness }}
+        env:
+          KINGPOST_E2E_MODEL: real
+          KINGPOST_E2E_CLAUDE_MODEL: claude-sonnet-5-5
+          ANTHROPIC_API_KEY: ${{ matrix.harness == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
+          OPENAI_API_KEY: ${{ matrix.harness == 'codex' && secrets.OPENAI_API_KEY || '' }}

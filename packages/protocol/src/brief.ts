@@ -32,7 +32,7 @@ export function renderBrief(input: BriefInput): string {
   }
 
   if (input.openQuestions.length > 0) {
-    lines.push("### Open questions");
+    lines.push("### Open questions (answer each with kingpost_answer before you end your turn)");
     for (const q of input.openQuestions.slice(0, 6)) {
       lines.push(`- [${q.id}] ${q.text}`);
     }
@@ -46,7 +46,7 @@ export function renderBrief(input: BriefInput): string {
   }
 
   lines.push(
-    "Tools: kingpost_status, kingpost_who, kingpost_ask, kingpost_answer, kingpost_finding, kingpost_brief, kingpost_contracts, kingpost_contract, kingpost_consume, kingpost_scan, kingpost_transfer, kingpost_propose, kingpost_accept, kingpost_reject, kingpost_reply"
+    "Tools: kingpost_status, kingpost_who, kingpost_ask, kingpost_answer, kingpost_finding, kingpost_brief, kingpost_contracts, kingpost_contract, kingpost_consume, kingpost_scan, kingpost_transfer, kingpost_propose, kingpost_proposal, kingpost_accept, kingpost_reject, kingpost_reply"
   );
 
   return lines.slice(0, MAX_BRIEF_LINES).join("\n");

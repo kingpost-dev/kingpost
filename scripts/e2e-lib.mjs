@@ -185,7 +185,7 @@ export function harnessCommand({ harness, prompt, dir, force = false, agentName,
   return [
     "claude",
     [
-      "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--max-turns", "12", "--permission-mode", "acceptEdits",
+      "-p", prompt, "--model", process.env.KINGPOST_E2E_CLAUDE_MODEL ?? "claude-haiku-4-5-20251001", "--max-turns", "12", "--permission-mode", "acceptEdits",
       // Claude Code won't connect to a project .mcp.json server until it's approved interactively, so hand it
       // the config explicitly and allow the server's tools.
       ...(mcp ? ["--mcp-config", join(dir, ".mcp.json"), "--strict-mcp-config", "--allowedTools", "mcp__kingpost"] : []),

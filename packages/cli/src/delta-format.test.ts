@@ -34,7 +34,13 @@ describe("renderDeltaLines", () => {
       consumerUserNames: ["sam"],
     });
     const lines = renderDeltaLines(delta);
-    expect(lines).toEqual(["Proposal for you: [proposal_1] change to contracts/api.json — tighten validation"]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("Proposal for you: [proposal_1] change to contracts/api.json — tighten validation.");
+    // The line says what to do about it, and that it must be dealt with before the turn ends.
+    expect(lines[0]).toContain("kingpost_proposal");
+    expect(lines[0]).toContain("kingpost_accept");
+    expect(lines[0]).toContain("kingpost_reject");
+    expect(lines[0]).toContain("before you end your turn");
   });
 
   it("renders an accepted proposal", () => {
@@ -83,6 +89,8 @@ describe("renderDeltaLines", () => {
       consumerUserNames: ["sam"],
     });
     const lines = renderDeltaLines(delta);
-    expect(lines).toEqual(["Finding: watch out for X", "Proposal for you: [proposal_1] change to contracts/api.json — tighten validation"]);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("Finding: watch out for X");
+    expect(lines[1]).toContain("Proposal for you: [proposal_1] change to contracts/api.json — tighten validation.");
   });
 });
