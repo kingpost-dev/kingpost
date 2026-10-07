@@ -9,6 +9,8 @@ export interface Delta {
   overlappingClaims: Extract<Event["payload"], { type: "agent_status" }>[];
   proposalsForMe: Extract<Event["payload"], { type: "proposal_created" }>[];
   proposalsAcceptedForMe: Extract<Event["payload"], { type: "proposal_accepted" }>[];
+  proposalsRejectedForMe: Extract<Event["payload"], { type: "proposal_rejected" }>[];
+  proposalRepliesForMe: Extract<Event["payload"], { type: "proposal_replied" }>[];
 }
 
 /** Events must be pre-sorted ascending by id and already filtered to events with id > agent.cursor. */
@@ -21,7 +23,13 @@ export function computeDelta(agent: Agent, eventsSinceCursor: Event[]): Delta {
     overlappingClaims: [],
     proposalsForMe: [],
     proposalsAcceptedForMe: [],
+    proposalsRejectedForMe: [],
+    proposalRepliesForMe: [],
   };
+
+  // A proposal concerns its contract's owner, the contract's consumers, and whoever proposed it.
+  const isRelated = (p: { proposal: { proposedByAgentId: string }; contract: { ownerUserName: string | null }; consumerUserNames: string[] }) =>
+    p.contract.ownerUserName === agent.userName || p.consumerUserNames.includes(agent.userName) || p.proposal.proposedByAgentId === agent.id;
 
   const myOpenQuestionIds = new Set(
     eventsSinceCursor
@@ -60,9 +68,13 @@ export function computeDelta(agent: Agent, eventsSinceCursor: Event[]): Delta {
         }
         break;
       case "proposal_accepted":
-        if (p.contract.ownerUserName === agent.userName || p.consumerUserNames.includes(agent.userName)) {
-          delta.proposalsAcceptedForMe.push(p);
-        }
+        if (isRelated(p)) delta.proposalsAcceptedForMe.push(p);
+        break;
+      case "proposal_rejected":
+        if (isRelated(p)) delta.proposalsRejectedForMe.push(p);
+        break;
+      case "proposal_replied":
+        if (isRelated(p)) delta.proposalRepliesForMe.push(p);
         break;
       case "agent_registered":
         break;
@@ -79,6 +91,8 @@ export function deltaIsEmpty(d: Delta): boolean {
     d.findings.length === 0 &&
     d.overlappingClaims.length === 0 &&
     d.proposalsForMe.length === 0 &&
-    d.proposalsAcceptedForMe.length === 0
+    d.proposalsAcceptedForMe.length === 0 &&
+    d.proposalsRejectedForMe.length === 0 &&
+    d.proposalRepliesForMe.length === 0
   );
 }

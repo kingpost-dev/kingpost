@@ -12,5 +12,7 @@ export function emptyDelta(): Delta {
     overlappingClaims: [],
     proposalsForMe: [],
     proposalsAcceptedForMe: [],
+    proposalsRejectedForMe: [],
+    proposalRepliesForMe: [],
   };
 }

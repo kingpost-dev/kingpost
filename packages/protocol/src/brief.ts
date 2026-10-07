@@ -45,7 +45,9 @@ export function renderBrief(input: BriefInput): string {
     }
   }
 
-  lines.push("Tools: kingpost_status, kingpost_who, kingpost_ask, kingpost_answer, kingpost_finding, kingpost_brief");
+  lines.push(
+    "Tools: kingpost_status, kingpost_who, kingpost_ask, kingpost_answer, kingpost_finding, kingpost_brief, kingpost_contracts, kingpost_contract, kingpost_consume, kingpost_scan, kingpost_transfer, kingpost_propose, kingpost_accept, kingpost_reject, kingpost_reply"
+  );
 
   return lines.slice(0, MAX_BRIEF_LINES).join("\n");
 }

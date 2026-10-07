@@ -60,9 +60,22 @@ export const ProposalSchema = z.object({
   newContent: z.string(),
   rationale: z.string(),
   status: ProposalStatusSchema,
+  // Why the owner turned it down; null/absent unless status is "rejected".
+  rejectionReason: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type Proposal = z.infer<typeof ProposalSchema>;
+
+/** A comment on a proposal from anyone related to it (owner, a consumer, or the proposer). */
+export const ProposalReplySchema = z.object({
+  id: z.string(),
+  proposalId: z.string(),
+  byAgentId: z.string().nullable(),
+  byUserName: z.string(),
+  text: z.string(),
+  createdAt: z.string(),
+});
+export type ProposalReply = z.infer<typeof ProposalReplySchema>;
 
 export const QuestionSchema = z.object({
   id: z.string(),
@@ -117,6 +130,19 @@ export const EventPayloadSchema = z.discriminatedUnion("type", [
     proposal: ProposalSchema,
     contract: ContractSchema,
     version: ContractVersionSchema,
+    consumerUserNames: z.array(z.string()),
+  }),
+  z.object({
+    type: z.literal("proposal_rejected"),
+    proposal: ProposalSchema,
+    contract: ContractSchema,
+    consumerUserNames: z.array(z.string()),
+  }),
+  z.object({
+    type: z.literal("proposal_replied"),
+    proposal: ProposalSchema,
+    contract: ContractSchema,
+    reply: ProposalReplySchema,
     consumerUserNames: z.array(z.string()),
   }),
 ]);
