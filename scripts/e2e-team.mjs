@@ -87,7 +87,9 @@ async function session(name, dir, steps, prompt) {
   const run = await runAsync(cmd, args, { cwd: dir, ...opts });
   const sent = JSON.stringify(fake.requests.map((r) => r.body));
   console.log(`[team/${harness}] ${name} session exit=${run.status}`);
-  lastSession = { name, status: run.status, sent };
+  const offered = fake.requests.map((r) => r.body.tools).find((t) => Array.isArray(t));
+  const toolsOffered = (offered ?? []).filter((t) => t.type === "namespace").map((t) => `${t.name}[${(t.tools ?? []).map((x) => x.name).join(",")}]`).join(" ") || "(no namespace tools offered)";
+  lastSession = { name, status: run.status, sent, toolsOffered };
   if (process.env.KINGPOST_E2E_DEBUG) writeFileSync(`/tmp/e2e-team-${harness}-${name}-${++sessionCount}.json`, sent);
   return { run, sent, output: (run.stdout ?? "") + (run.stderr ?? "") };
 }
@@ -106,7 +108,7 @@ function excerpt(sent) {
 
 function expect(cond, msg, detail) {
   if (!cond) {
-    const last = lastSession ? `\n--- last session (${lastSession.name}, exit ${lastSession.status}) tool results ---\n  - ${toolResults(lastSession.sent)}` : "";
+    const last = lastSession ? `\n--- last session (${lastSession.name}, exit ${lastSession.status}) tool results ---\n  - ${toolResults(lastSession.sent)}\nMCP tools Codex offered: ${lastSession.toolsOffered}` : "";
     fail(msg, `${detail ?? ""}${last}`);
   }
   console.log(`  ok: ${msg.replace(/^expected /, "")}`);

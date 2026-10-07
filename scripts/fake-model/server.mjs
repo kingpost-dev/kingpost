@@ -52,15 +52,27 @@ function countAnthropicToolResults(messages) {
 // Codex's tool set comes from its model catalog (see codex-catalog.json): that fake model gets the
 // freeform `apply_patch` tool and `exec_command`. A step's `input` is the raw patch text for apply_patch
 // and an object for function tools.
-function responsesStream(res, step) {
+// MCP tools are offered grouped in a namespace tool ({type:"namespace", name, tools:[{name}]}). How a namespace
+// and a tool name are written differs between Codex runs (and platforms), and a call that doesn't match what was
+// offered is rejected ("unsupported call"), so address the tool exactly as THIS request offered it.
+function resolveNamespacedTool(offered, step) {
+  for (const t of offered ?? []) {
+    if (t.type !== "namespace") continue;
+    const match = (t.tools ?? []).find((x) => x.name === step.tool || x.name.endsWith(step.tool));
+    if (match) return { namespace: t.name, name: match.name };
+  }
+  return { namespace: step.namespace, name: step.tool };
+}
+
+function responsesStream(res, step, offered) {
   const respId = id("resp");
   const events = [["response.created", { type: "response.created", response: { id: respId } }]];
   let item;
   if (step.tool === "apply_patch") {
     item = { type: "custom_tool_call", id: id("ctc"), call_id: id("call"), name: "apply_patch", input: step.input };
   } else if (step.tool) {
-    // MCP tools are offered in a namespace (mcp__<server>) and must be called with it plus the bare name.
-    item = { type: "function_call", id: id("fc"), call_id: id("call"), name: step.tool, arguments: JSON.stringify(step.input), ...(step.namespace ? { namespace: step.namespace } : {}) };
+    const target = step.namespace ? resolveNamespacedTool(offered, step) : { name: step.tool };
+    item = { type: "function_call", id: id("fc"), call_id: id("call"), name: target.name, arguments: JSON.stringify(step.input), ...(target.namespace ? { namespace: target.namespace } : {}) };
   } else {
     item = { type: "message", id: id("msg"), role: "assistant", content: [{ type: "output_text", text: step.text }] };
   }
@@ -111,7 +123,7 @@ export async function startFakeModel(initial = {}) {
       if (req.method === "POST" && req.url.includes("/responses")) {
         const isMain = Array.isArray(json.tools) && json.tools.length > 0;
         const step = isMain ? scripts.codexSteps[Math.min(countResponsesToolOutputs(json.input), scripts.codexSteps.length - 1)] : { text: "ok" };
-        return responsesStream(res, step);
+        return responsesStream(res, step, json.tools);
       }
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: { message: `fake model: no handler for ${req.method} ${req.url}` } }));
