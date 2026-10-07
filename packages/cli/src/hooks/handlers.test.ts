@@ -727,6 +727,32 @@ describe("handlePostToolUse after a shell command", () => {
     expect(readProjectConfig(cwd)?.contractHashes?.["contracts/user.json"]).toBe(sha(V2_SAFE));
   });
 
+  it("judges breaking from the version it already fetched, with no second lookup of the contract", async () => {
+    writeContract("contracts/user.json", V2_BREAKING);
+    await shell();
+    expect(listContractsSpy).toHaveBeenCalledTimes(1);
+    expect(getContractSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("still flags a breaking change when the server is slow (3s per call), as on a CI runner", async () => {
+    // Regression: a redundant lookup with a 1s budget expired on slow runners, so a breaking shell write was
+    // published as NOT breaking (or dropped), and the other agents were never warned.
+    vi.useFakeTimers();
+    try {
+      writeContract("contracts/user.json", V2_BREAKING);
+      const slow = <T,>(value: T) => new Promise<T>((resolve) => setTimeout(() => resolve(value), 3000));
+      listContractsSpy.mockImplementation(() => slow({ contracts: [{ id: "c1", path: "contracts/user.json", format: "json-schema", currentVersion: 1, ownerAgentId: null, ownerUserName: "sam", createdAt: "" }] }) as any);
+      getContractSpy.mockImplementation(() => slow({ contract: {}, versions: [{ version: 1, content: V1, contentSha256: sha(V1) }] }) as any);
+      const pending = shell();
+      await vi.advanceTimersByTimeAsync(12_000);
+      const text = await pending;
+      expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ breaking: true }));
+      expect(text).toContain("BREAKING");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("flags a breaking shell write, names the consumers, and says how to do it properly", async () => {
     writeContract("contracts/user.json", V2_BREAKING);
     const text = await shell();

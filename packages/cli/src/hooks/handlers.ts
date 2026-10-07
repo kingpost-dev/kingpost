@@ -47,6 +47,21 @@ async function scanForConsumedContracts(
 // of the window, rather than risking getting killed by hook.ts's unconditional process.exit(0).
 const LOOKUP_TIMEOUT_MS = 1000;
 
+/** Whether going from `previous` to `next` is a breaking change, for the formats we know how to diff
+ * (anything else is never "breaking"). Pure: no lookups, no timeouts. */
+async function diffContractContent(
+  format: "json-schema" | "openapi" | "drizzle" | "unknown",
+  previous: string,
+  next: string
+): Promise<{ breaking: boolean; diffSummary?: string }> {
+  if (format !== "json-schema" && format !== "openapi" && format !== "drizzle") return { breaking: false };
+  const result =
+    format === "json-schema" ? diffJsonSchema(previous, next) :
+    format === "openapi" ? await diffOpenApi(previous, next) :
+    diffDrizzle(previous, next);
+  return { breaking: result.breaking, diffSummary: result.summary };
+}
+
 /** Looks up the previous version of a contract and diffs it against the new content, treating
  * a slow lookup, a missing previous version, or any lookup failure alike as "not breaking" —
  * never let this block or fail the publish that follows. */
@@ -82,11 +97,7 @@ async function detectBreakingChange(
       return { breaking: false };
     }
 
-    const result =
-      format === "json-schema" ? diffJsonSchema(previousContent, newContent) :
-      format === "openapi" ? await diffOpenApi(previousContent, newContent) :
-      diffDrizzle(previousContent, newContent);
-    return { breaking: result.breaking, diffSummary: result.summary };
+    return await diffContractContent(format, previousContent, newContent);
   } catch (e) {
     log(`breaking-change check for ${path} failed (${e instanceof Error ? e.message : String(e)}), not blocking`);
     return { breaking: false };
@@ -296,6 +307,8 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
  * publishes what's on disk to the registry (flagged breaking if it is, which tells the other agents) and tells
  * this agent plainly that it bypassed the check. A local hash cache keeps the common case (nothing changed) free of
  * network calls, and any failure leaves the file un-remembered so the next command retries. */
+const SHELL_CHECK_API_TIMEOUT_MS = 5000;
+
 async function noticeShellContractWrites(input: HookInput): Promise<string> {
   const files = listContractFiles(input.cwd);
   if (files.length === 0) return "";
@@ -311,12 +324,20 @@ async function noticeShellContractWrites(input: HookInput): Promise<string> {
   const notes: string[] = [];
   const remembered: Record<string, string> = {};
 
+  // This only runs when a contract file really changed, so it can afford to be patient: a 1.5s per-call budget
+  // meant for hooks that run on every prompt was measured expiring on CI runners, which turned a breaking
+  // change into "not breaking" and sometimes dropped the publish entirely.
+  const token = getToken(ctx.config.projectId);
+  if (!token) return "";
+  const client = new ApiClient(ctx.config.serverUrl, ctx.config.projectId, token, SHELL_CHECK_API_TIMEOUT_MS);
+
   try {
-    const { contracts } = await ctx.client.listContracts();
+    const { contracts } = await client.listContracts();
     for (const file of changed) {
       const existing = contracts.find((c) => c.path === file.path);
+      let previousContent: string | null = null;
       if (existing) {
-        const { versions } = await ctx.client.getContract(existing.id);
+        const { versions } = await client.getContract(existing.id);
         // Any version, not just the latest: a checkout that is BEHIND a teammate's change holds an older version
         // verbatim, and publishing that would silently revert the team's contract. Content the registry has
         // never held is the only thing that can be a genuine shell edit.
@@ -324,15 +345,17 @@ async function noticeShellContractWrites(input: HookInput): Promise<string> {
           remembered[file.path] = file.sha256; // already in the registry (published by an edit tool, or just stale)
           continue;
         }
+        previousContent = versions[0]?.content ?? null;
       }
       const format = detectFormat(file.path, file.content);
-      const { breaking, diffSummary } = await detectBreakingChange(ctx.client, file.path, format, file.content);
-      const { contract, version } = await ctx.client.publishContract({ path: file.path, content: file.content, updatedBy: userName, format, breaking, diffSummary });
+      // Diffed against the version fetched just above, not looked up again.
+      const { breaking, diffSummary } = previousContent ? await diffContractContent(format, previousContent, file.content) : { breaking: false, diffSummary: undefined };
+      const { contract, version } = await client.publishContract({ path: file.path, content: file.content, updatedBy: userName, format, breaking, diffSummary });
       remembered[file.path] = file.sha256;
 
       let line = `${file.path} was changed by a shell command, which Kingpost can't check before it happens. It was published as v${version.version}`;
       if (breaking) {
-        const { consumers } = await ctx.client.listConsumers(contract.id);
+        const { consumers } = await client.listConsumers(contract.id);
         const names = consumers.map((c) => c.path).join(", ");
         line += ` and it is a BREAKING change: ${diffSummary ?? "unspecified change"}.${names ? ` Affected consumers: ${names}.` : ""} Teammates have been told. If that wasn't intended, restore the file or send the change through kingpost_propose`;
       }

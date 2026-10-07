@@ -27,6 +27,10 @@ const HANDLER_TIMEOUT_MS = 3000;
 // PreToolUse can block, and only does network work for contract-file edits (rare), so it gets a longer
 // ceiling than the hooks that run on every prompt. Must exceed handlers.ts's BLOCK_CHECK_TIMEOUT_MS.
 const PRE_TOOL_USE_TIMEOUT_MS = 9000;
+// PostToolUse is usually instant, but after a shell command that changed a contract it makes several server calls
+// (look the contract up, publish it, list its consumers). That path is rare and worth finishing, so it gets the
+// same longer ceiling; each individual call is still bounded by its own timeout.
+const POST_TOOL_USE_TIMEOUT_MS = 9000;
 
 function readStdin(): Promise<string> {
   return new Promise((resolve) => {
@@ -84,7 +88,9 @@ export async function hookCommand(harness: Harness): Promise<void> {
 
       const additionalContext = await Promise.race([
         handler(input),
-        new Promise<string>((resolve) => setTimeout(() => resolve(""), HANDLER_TIMEOUT_MS)),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve(""), input.hookEventName === "PostToolUse" ? POST_TOOL_USE_TIMEOUT_MS : HANDLER_TIMEOUT_MS)
+        ),
       ]);
 
       if (additionalContext) {
