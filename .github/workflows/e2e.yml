@@ -45,3 +45,7 @@ jobs:
         run: node scripts/e2e-team.mjs ${{ matrix.harness }}
         env:
           KINGPOST_E2E_MODEL: fake
+      - name: Shell-write scenario (contract rewritten by a shell command, scripted model)
+        run: node scripts/e2e-shell.mjs ${{ matrix.harness }}
+        env:
+          KINGPOST_E2E_MODEL: fake

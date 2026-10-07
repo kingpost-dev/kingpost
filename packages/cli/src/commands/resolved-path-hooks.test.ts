@@ -74,6 +74,47 @@ describe("upsertClaudeHooks", () => {
   });
 });
 
+describe("upsertClaudeHooks — Bash after-the-fact detection", () => {
+  it("runs the PostToolUse hook after shell commands too, so a contract changed by `sed -i` is noticed", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    upsertClaudeHooks(dir, ENTRY_PATH_A);
+    expect(readJson(join(dir, ".claude", "settings.json")).hooks.PostToolUse[0].matcher).toBe("Write|Edit|Bash");
+    // PreToolUse stays on the edit tools: a shell command can't be checked before it runs.
+    expect(readJson(join(dir, ".claude", "settings.json")).hooks.PreToolUse[0].matcher).toBe("Write|Edit");
+  });
+
+  it("migrates a project set up with the old matcher without leaving a second PostToolUse hook behind", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    const settingsPath = join(dir, ".claude", "settings.json");
+    const own = { type: "command", command: process.execPath, args: [ENTRY_PATH_A, "hook", "PostToolUse", "--harness", "claude"] };
+    const theirs = { type: "command", command: "my-linter" };
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [
+            { matcher: "Write|Edit", hooks: [own, theirs] },
+            { matcher: "Read", hooks: [{ type: "command", command: "audit-reads" }] },
+          ],
+        },
+      })
+    );
+
+    upsertClaudeHooks(dir, ENTRY_PATH_B);
+    const groups = readJson(settingsPath).hooks.PostToolUse as any[];
+    const kingpostHooks = groups.flatMap((g) => g.hooks).filter((h: any) => h.args?.[1] === "hook");
+    expect(kingpostHooks).toHaveLength(1);
+    expect(kingpostHooks[0].args[0]).toBe(ENTRY_PATH_B);
+    expect(groups.find((g) => g.hooks.includes(kingpostHooks[0])).matcher).toBe("Write|Edit|Bash");
+    // The user's own hooks survive, wherever they were.
+    expect(groups.flatMap((g) => g.hooks).filter((h: any) => h.command === "my-linter")).toHaveLength(1);
+    expect(groups.some((g) => g.matcher === "Read")).toBe(true);
+    // A group that only held our old entry is dropped, not left empty.
+    expect(groups.every((g) => g.hooks.length > 0)).toBe(true);
+  });
+});
+
 describe("buildCodexHook — Windows commandWindows override", () => {
   const WIN_NODE = "C:\\Program Files\\nodejs\\node.exe";
   const WIN_ENTRY = "C:\\Users\\Jackson\\AppData\\Roaming\\npm\\node_modules\\kingpost\\dist\\index.js";

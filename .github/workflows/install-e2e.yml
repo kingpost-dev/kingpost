@@ -65,3 +65,8 @@ jobs:
         env:
           KINGPOST_E2E_CLI: installed
           KINGPOST_E2E_MODEL: fake
+      - name: Shell-write scenario through the installed package
+        run: node scripts/e2e-shell.mjs ${{ matrix.harness }}
+        env:
+          KINGPOST_E2E_CLI: installed
+          KINGPOST_E2E_MODEL: fake

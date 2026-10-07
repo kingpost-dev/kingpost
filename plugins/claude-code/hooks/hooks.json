@@ -10,7 +10,7 @@
       { "matcher": "Write|Edit", "hooks": [{ "type": "command", "command": "kingpost hook PreToolUse --harness claude" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Write|Edit", "hooks": [{ "type": "command", "command": "kingpost hook PostToolUse --harness claude" }] }
+      { "matcher": "Write|Edit|Bash", "hooks": [{ "type": "command", "command": "kingpost hook PostToolUse --harness claude" }] }
     ]
   }
 }

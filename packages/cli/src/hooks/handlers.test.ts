@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -647,5 +648,133 @@ describe("handlePostToolUse — derived consumer scanning", () => {
     expect(declareSpy).not.toHaveBeenCalled();
     const config = readProjectConfig(cwd);
     expect(config?.claims).toContain("src/consumer.ts");
+  });
+});
+
+// ---- contracts rewritten by a shell command (`sed -i`, `cat >`): Kingpost can't block it, but must notice it ----
+describe("handlePostToolUse after a shell command", () => {
+  const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+  const V1 = JSON.stringify({ type: "object", properties: { name: { type: "string" }, age: { type: "number" } }, required: ["name"] });
+  const V2_BREAKING = JSON.stringify({ type: "object", properties: { name: { type: "string" } }, required: ["name"] }); // drops age
+  const V2_SAFE = JSON.stringify({ type: "object", properties: { name: { type: "string" }, age: { type: "number" }, nick: { type: "string" } }, required: ["name"] });
+
+  let cwd: string;
+  let listContractsSpy: ReturnType<typeof vi.spyOn>;
+  let getContractSpy: ReturnType<typeof vi.spyOn>;
+  let publishSpy: ReturnType<typeof vi.spyOn>;
+  let listConsumersSpy: ReturnType<typeof vi.spyOn>;
+
+  const shell = () => handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, toolName: "Bash" });
+  const writeContract = (rel: string, text: string) => {
+    mkdirSync(join(cwd, "contracts"), { recursive: true });
+    writeFileSync(join(cwd, rel), text);
+  };
+
+  beforeEach(() => {
+    vi.mocked(log).mockClear();
+    cwd = mkdtempSync(join(tmpdir(), "kp-hook-shell-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    // The registry already holds V1 of contracts/user.json.
+    listContractsSpy = vi.spyOn(apiModule.ApiClient.prototype, "listContracts").mockResolvedValue({
+      contracts: [{ id: "c1", path: "contracts/user.json", format: "json-schema", currentVersion: 1, ownerAgentId: null, ownerUserName: "sam", createdAt: "" }],
+    } as any);
+    getContractSpy = vi.spyOn(apiModule.ApiClient.prototype, "getContract").mockResolvedValue({
+      contract: {} as any,
+      versions: [{ version: 1, content: V1, contentSha256: sha(V1) } as any],
+    });
+    publishSpy = vi.spyOn(apiModule.ApiClient.prototype, "publishContract").mockResolvedValue({
+      contract: { id: "c1", path: "contracts/user.json", currentVersion: 2 } as any,
+      version: { version: 2 } as any,
+      changed: true,
+    });
+    listConsumersSpy = vi.spyOn(apiModule.ApiClient.prototype, "listConsumers").mockResolvedValue({
+      consumers: [{ id: "k1", contractId: "c1", path: "src/billing.ts", agentId: null, declared: false, createdAt: "" }],
+    } as any);
+    for (const spy of [listContractsSpy, getContractSpy, publishSpy, listConsumersSpy]) spy.mockClear();
+  });
+
+  it("does nothing, and makes no network calls, when the project has no contracts directory", async () => {
+    expect(await shell()).toBe("");
+    expect(listContractsSpy).not.toHaveBeenCalled();
+  });
+
+  it("does nothing, and makes no network calls, when no contract changed since Kingpost last saw it", async () => {
+    writeContract("contracts/user.json", V1);
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1", contractHashes: { "contracts/user.json": sha(V1) } });
+    expect(await shell()).toBe("");
+    expect(listContractsSpy).not.toHaveBeenCalled();
+  });
+
+  it("recognises a contract that already matches the registry and just remembers it, publishing nothing", async () => {
+    writeContract("contracts/user.json", V1);
+    expect(await shell()).toBe("");
+    expect(publishSpy).not.toHaveBeenCalled();
+    expect(readProjectConfig(cwd)?.contractHashes?.["contracts/user.json"]).toBe(sha(V1));
+    // ...so the next shell command costs nothing.
+    listContractsSpy.mockClear();
+    await shell();
+    expect(listContractsSpy).not.toHaveBeenCalled();
+  });
+
+  it("publishes a contract a shell command changed and tells the agent it bypassed the breaking-change check", async () => {
+    writeContract("contracts/user.json", V2_SAFE);
+    const text = await shell();
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/user.json", content: V2_SAFE, breaking: false }));
+    expect(text).toContain("contracts/user.json was changed by a shell command");
+    expect(text).toContain("published as v2");
+    expect(text).not.toContain("BREAKING");
+    expect(readProjectConfig(cwd)?.contractHashes?.["contracts/user.json"]).toBe(sha(V2_SAFE));
+  });
+
+  it("flags a breaking shell write, names the consumers, and says how to do it properly", async () => {
+    writeContract("contracts/user.json", V2_BREAKING);
+    const text = await shell();
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ breaking: true }));
+    expect(text).toContain("BREAKING");
+    expect(text).toContain("removes /properties/age");
+    expect(text).toContain("src/billing.ts"); // the consumer who is now affected
+    expect(text).toContain("kingpost_propose");
+    expect(text).toContain("file-editing tool");
+  });
+
+  it("does not publish a stale local file that merely matches an OLDER registry version (a checkout that is behind a teammate's change)", async () => {
+    // The registry is at v3 now; this checkout still holds V1. Publishing it would silently revert the team's contract.
+    getContractSpy.mockResolvedValue({
+      contract: {} as any,
+      versions: [
+        { version: 3, content: V2_SAFE, contentSha256: sha(V2_SAFE) } as any,
+        { version: 2, content: V2_BREAKING, contentSha256: sha(V2_BREAKING) } as any,
+        { version: 1, content: V1, contentSha256: sha(V1) } as any,
+      ],
+    });
+    writeContract("contracts/user.json", V1);
+    expect(await shell()).toBe("");
+    expect(publishSpy).not.toHaveBeenCalled();
+    expect(readProjectConfig(cwd)?.contractHashes?.["contracts/user.json"]).toBe(sha(V1)); // remembered, so not rechecked
+  });
+
+  it("publishes a brand-new contract file written by a shell command", async () => {
+    writeContract("contracts/new.json", JSON.stringify({ type: "object" }));
+    const text = await shell();
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ path: "contracts/new.json" }));
+    expect(text).toContain("contracts/new.json was changed by a shell command");
+  });
+
+  it("fails open and says nothing when the server can't be reached, and does not remember the file as handled", async () => {
+    writeContract("contracts/user.json", V2_BREAKING);
+    listContractsSpy.mockRejectedValue(new Error("network down"));
+    expect(await shell()).toBe("");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("network down"));
+    expect(readProjectConfig(cwd)?.contractHashes?.["contracts/user.json"]).toBeUndefined(); // retried on the next command
+  });
+
+  it("remembers what an edit-tool publish wrote, so the next shell command doesn't re-report it", async () => {
+    writeContract("contracts/user.json", V2_SAFE);
+    await handlePostToolUse({ harness: "claude", hookEventName: "PostToolUse", cwd, toolName: "Write", filePath: "contracts/user.json" });
+    expect(readProjectConfig(cwd)?.contractHashes?.["contracts/user.json"]).toBe(sha(V2_SAFE));
+    listContractsSpy.mockClear();
+    expect(await shell()).toBe("");
+    expect(listContractsSpy).not.toHaveBeenCalled();
   });
 });

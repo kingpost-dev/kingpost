@@ -11,6 +11,9 @@ export interface ProjectConfig {
   claims?: string[];
   lastKnownChangedContractPaths?: string[];
   lastKnownOverlappingClaimPaths?: string[];
+  /** contract path -> sha256 of the content Kingpost last saw in sync with the registry, so a shell command that
+   * rewrites a contract can be told apart from "nothing changed" without a network call. */
+  contractHashes?: Record<string, string>;
 }
 
 export interface Credentials {

@@ -67,6 +67,30 @@ function hasKingpostHookEntry(hooksByEvent: unknown, event: string, isOwn: (hook
   });
 }
 
+/** Whether the Claude Code PostToolUse hook is set to run after Bash commands. Projects set up before shell-write
+ * detection existed only match Write|Edit, so a contract rewritten by a shell command goes unnoticed until
+ * `kingpost update` refreshes the hook config. */
+export function claudePostToolHookCoversShell(settings: unknown): boolean {
+  const groups = (settings as { hooks?: Record<string, unknown> } | null)?.hooks?.PostToolUse;
+  if (!Array.isArray(groups)) return false;
+  return groups.some((g) => {
+    const group = g as { matcher?: string; hooks?: unknown[] };
+    return /\bBash\b/.test(group.matcher ?? "") && Array.isArray(group.hooks) && group.hooks.some((h) => isKingpostClaudeHook(h, "PostToolUse"));
+  });
+}
+
+function checkClaudeShellHook(cwd: string): Check | null {
+  const p = join(cwd, ".claude", "settings.json");
+  if (!existsSync(p)) return null; // the resolved-path hooks check already reports a missing file
+  const label = "Claude Code notices contracts rewritten by shell commands";
+  try {
+    const ok = claudePostToolHookCoversShell(JSON.parse(readFileSync(p, "utf8")));
+    return ok ? { label, ok } : { label, ok, detail: "this project's hooks predate shell-write detection — run 'kingpost update'" };
+  } catch {
+    return null;
+  }
+}
+
 function checkClaudeResolvedPathHooks(cwd: string): Check {
   const label = "Claude Code resolved-path hooks (Windows safety net)";
   const p = join(cwd, ".claude", "settings.json");
@@ -242,6 +266,8 @@ export async function doctorCommand(cwd: string = process.cwd()): Promise<void> 
   checks.push(checkAgentsMdBlock(cwd));
   checks.push(checkClaudePlugin(cwd));
   checks.push(checkClaudeResolvedPathHooks(cwd));
+  const shellHook = checkClaudeShellHook(cwd);
+  if (shellHook) checks.push(shellHook);
   checks.push(checkClaudeMcpConfig(cwd));
   const approval = checkClaudeMcpApproval(cwd);
   if (approval) checks.push(approval);

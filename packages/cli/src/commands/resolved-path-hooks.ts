@@ -26,7 +26,9 @@ export const CLAUDE_HOOK_EVENTS: HookEventSpec[] = [
   { event: "SessionStart", matcher: "startup|resume" },
   { event: "UserPromptSubmit" },
   { event: "PreToolUse", matcher: "Write|Edit" },
-  { event: "PostToolUse", matcher: "Write|Edit" },
+  // Bash too, but only AFTER: a shell command can't be checked before it runs, yet a contract it rewrote
+  // (`sed -i`, `cat >`) should still be noticed and published rather than slip past Kingpost silently.
+  { event: "PostToolUse", matcher: "Write|Edit|Bash" },
 ];
 
 // Same 4 events/matchers as plugins/codex/hooks/hooks.json.
@@ -112,8 +114,10 @@ export function buildCodexHook(
 
 /** Upserts `hook` into the matcher group for `matcher` within `groups` (an event's array of
  * matcher groups), replacing any pre-existing kingpost entry for the same event (per `isOwn`)
- * rather than duplicating it. Non-kingpost hooks in the same group, and other matcher groups
- * entirely, are left untouched. */
+ * rather than duplicating it. Our entry is removed from EVERY group first, so a project set up
+ * under an older matcher (e.g. "Write|Edit" before Bash was added) is migrated instead of ending
+ * up with the hook in two groups, which would run it twice per edit. Groups left empty by that
+ * removal are dropped; non-kingpost hooks and other groups are left untouched. */
 function upsertMatcherGroup(
   groups: unknown,
   event: string,
@@ -121,7 +125,18 @@ function upsertMatcherGroup(
   hook: Record<string, unknown>,
   isOwn: (hook: unknown, event: string) => boolean
 ): unknown[] {
-  const list = Array.isArray(groups) ? [...groups] : [];
+  const list: unknown[] = [];
+  for (const g of Array.isArray(groups) ? groups : []) {
+    if (typeof g === "object" && g !== null && Array.isArray((g as Record<string, unknown>).hooks)) {
+      const group = g as Record<string, unknown>;
+      const original = group.hooks as unknown[];
+      const kept = original.filter((h) => !isOwn(h, event));
+      if (kept.length === 0 && original.length > 0) continue; // held only our old entry
+      list.push(kept.length === original.length ? g : { ...group, hooks: kept });
+    } else {
+      list.push(g);
+    }
+  }
   const key = matcher ?? "";
   const group = list.find((g) => typeof g === "object" && g !== null && ((g as Record<string, unknown>).matcher ?? "") === key) as
     | Record<string, unknown>

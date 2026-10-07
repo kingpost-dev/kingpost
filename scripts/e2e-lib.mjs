@@ -159,8 +159,9 @@ export function prepareCodexHome(projectDirs, fakeUrl) {
 
 /** The command line + environment to run one non-interactive agent turn.
  * opts: harness, prompt, dir, force (KINGPOST_FORCE), agentName (KINGPOST_AGENT), fake (scripted model
- * server), codexHome, mcp (let the agent call the Kingpost MCP tools unattended). */
-export function harnessCommand({ harness, prompt, dir, force = false, agentName, fake, codexHome, mcp = false }) {
+ * server), codexHome, mcp (let the agent call the Kingpost MCP tools unattended), shell (let Claude Code run
+ * Bash; it is disabled otherwise so a model can't sidestep the edit tools by accident). */
+export function harnessCommand({ harness, prompt, dir, force = false, agentName, fake, codexHome, mcp = false, shell = false }) {
   const env = {};
   if (force) env.KINGPOST_FORCE = "1";
   if (agentName) env.KINGPOST_AGENT = agentName;
@@ -189,7 +190,8 @@ export function harnessCommand({ harness, prompt, dir, force = false, agentName,
       // Claude Code won't connect to a project .mcp.json server until it's approved interactively, so hand it
       // the config explicitly and allow the server's tools.
       ...(mcp ? ["--mcp-config", join(dir, ".mcp.json"), "--strict-mcp-config", "--allowedTools", "mcp__kingpost"] : []),
-      "--output-format", "stream-json", "--verbose", "--disallowedTools", "Bash",
+      "--output-format", "stream-json", "--verbose",
+      ...(shell ? ["--allowedTools", "Bash"] : ["--disallowedTools", "Bash"]),
     ],
     { env },
   ];

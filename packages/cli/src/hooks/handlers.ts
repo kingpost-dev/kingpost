@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import { diffJsonSchema } from "../differs/json-schema.js";
 import { diffOpenApi } from "../differs/openapi.js";
 import { diffDrizzle } from "../differs/drizzle.js";
 import { findConsumedContractIds } from "../scan/match-contracts.js";
+import { listContractFiles } from "../scan/contract-files.js";
 import { log } from "./log.js";
 
 export function isContractPath(path: string | undefined): boolean {
@@ -289,7 +291,67 @@ export async function handlePreToolUse(input: HookInput): Promise<PreToolUseResu
   return { kind: "context", text: TEAMMATE_LABEL + lines.join("\n") };
 }
 
+/** After a shell command: did it rewrite a contract? A shell write can't be blocked (the file is already written)
+ * and the edit-tool hooks never see it, so without this a breaking change could slip past Kingpost entirely. This
+ * publishes what's on disk to the registry (flagged breaking if it is, which tells the other agents) and tells
+ * this agent plainly that it bypassed the check. A local hash cache keeps the common case (nothing changed) free of
+ * network calls, and any failure leaves the file un-remembered so the next command retries. */
+async function noticeShellContractWrites(input: HookInput): Promise<string> {
+  const files = listContractFiles(input.cwd);
+  if (files.length === 0) return "";
+  const config = readProjectConfig(input.cwd);
+  if (!config) return "";
+  const hashes = config.contractHashes ?? {};
+  const changed = files.filter((f) => hashes[f.path] !== f.sha256);
+  if (changed.length === 0) return "";
+
+  const ctx = await ensureAgent(input.cwd, input.harness);
+  if (!ctx) return "";
+  const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? "unknown";
+  const notes: string[] = [];
+  const remembered: Record<string, string> = {};
+
+  try {
+    const { contracts } = await ctx.client.listContracts();
+    for (const file of changed) {
+      const existing = contracts.find((c) => c.path === file.path);
+      if (existing) {
+        const { versions } = await ctx.client.getContract(existing.id);
+        // Any version, not just the latest: a checkout that is BEHIND a teammate's change holds an older version
+        // verbatim, and publishing that would silently revert the team's contract. Content the registry has
+        // never held is the only thing that can be a genuine shell edit.
+        if (versions.some((v) => v.contentSha256 === file.sha256)) {
+          remembered[file.path] = file.sha256; // already in the registry (published by an edit tool, or just stale)
+          continue;
+        }
+      }
+      const format = detectFormat(file.path, file.content);
+      const { breaking, diffSummary } = await detectBreakingChange(ctx.client, file.path, format, file.content);
+      const { contract, version } = await ctx.client.publishContract({ path: file.path, content: file.content, updatedBy: userName, format, breaking, diffSummary });
+      remembered[file.path] = file.sha256;
+
+      let line = `${file.path} was changed by a shell command, which Kingpost can't check before it happens. It was published as v${version.version}`;
+      if (breaking) {
+        const { consumers } = await ctx.client.listConsumers(contract.id);
+        const names = consumers.map((c) => c.path).join(", ");
+        line += ` and it is a BREAKING change: ${diffSummary ?? "unspecified change"}.${names ? ` Affected consumers: ${names}.` : ""} Teammates have been told. If that wasn't intended, restore the file or send the change through kingpost_propose`;
+      }
+      notes.push(`${line}. To have breaking changes blocked before they land, edit files under contracts/ with your file-editing tool (Write/Edit/apply_patch), never a shell command.`);
+    }
+  } catch (e) {
+    log(`shell-write contract check failed (${e instanceof Error ? e.message : String(e)}); will retry after the next command`);
+  }
+
+  if (Object.keys(remembered).length > 0) {
+    // Re-read: another hook may have rewritten the config while we were on the network.
+    const latest = readProjectConfig(input.cwd) ?? config;
+    writeProjectConfig(input.cwd, { ...latest, contractHashes: { ...(latest.contractHashes ?? {}), ...remembered } });
+  }
+  return notes.join("\n\n");
+}
+
 export async function handlePostToolUse(input: HookInput): Promise<string> {
+  if (input.toolName === "Bash") return noticeShellContractWrites(input);
   if (!input.filePath) return "";
   const config = readProjectConfig(input.cwd);
   const ctx = await ensureAgent(input.cwd, input.harness);
@@ -310,6 +372,9 @@ export async function handlePostToolUse(input: HookInput): Promise<string> {
       const format = detectFormat(input.filePath, content);
       const { breaking, diffSummary } = await detectBreakingChange(ctx.client, input.filePath, format, content);
       await ctx.client.publishContract({ path: input.filePath, content, updatedBy: userName, format, breaking, diffSummary });
+      // Remember it, so a later shell command doesn't mistake what this edit wrote for a shell-made change.
+      const latest = readProjectConfig(input.cwd) ?? ctx.config;
+      writeProjectConfig(input.cwd, { ...latest, contractHashes: { ...(latest.contractHashes ?? {}), [input.filePath]: createHash("sha256").update(content).digest("hex") } });
     } else {
       await scanForConsumedContracts(ctx.client, ctx.agentId, input.filePath, content);
     }

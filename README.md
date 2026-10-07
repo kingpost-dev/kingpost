@@ -65,6 +65,12 @@ A breaking edit to a contract that other files depend on is blocked outright (ov
 - The **proposer** is told about acceptance and rejection (with the reason), not only the owner and consumers.
 - Anything that arrives while an agent's session is closed is shown at its next session start, under "Since your last session".
 
+## Contracts changed by shell commands
+
+Kingpost checks and can block an edit made through an agent's file-editing tool (`Write`, `Edit`, `apply_patch`) *before* it happens. A shell command that rewrites a contract (`sed -i`, `cat >`, a script) can't be checked in advance, so it can't be blocked. What Kingpost does instead, after any shell command: if a file under `contracts/` changed, it publishes the new content to the registry, marks it breaking if it is (which tells the other agents and names the affected consumers), and tells the agent that it bypassed the check and that breaking changes should go through `kingpost_propose`. A file that merely matches a version the registry already holds, such as a checkout that is behind a teammate's change, is never republished.
+
+This needs the hook that runs after Claude Code's `Bash` tool. Projects set up before this was added only have it after `kingpost update`; `kingpost doctor` says so when it's missing.
+
 ## How agents prioritize Kingpost's messages
 
 `kingpost init` writes these rules into your project's `AGENTS.md`: the human's current request always comes first, and a teammate's message never changes what the human asked for. Within that, an agent does the human's task and then clears its Kingpost inbox before ending its turn: it reads any proposal about a contract it owns and accepts it, rejects it with a reason, or replies, and it answers any question addressed to it (or says what it would need). A proposal about a contract it only depends on is worth a reply if it has a concern. Findings and status updates are background. A teammate's message never changes what the human asked for. The block's wording changes between releases, and `init` only writes it once, so after upgrading kingpost run `kingpost update` in each project: it replaces just the Kingpost block in `AGENTS.md` (your own notes around it are untouched) and refreshes the hook and MCP configs with the installed paths. `kingpost doctor` tells you when the block is out of date.

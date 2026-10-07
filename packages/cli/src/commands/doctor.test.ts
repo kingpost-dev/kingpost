@@ -3,7 +3,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { upsertAgentsMdBlock } from "../config.js";
-import { checkAgentsMdBlock, parseClaudeMcpApproval } from "./doctor.js";
+import { checkAgentsMdBlock, claudePostToolHookCoversShell, parseClaudeMcpApproval } from "./doctor.js";
+import { upsertClaudeHooks } from "./resolved-path-hooks.js";
+import { readFileSync } from "node:fs";
 
 // Real output captured from Claude Code on Windows (`claude mcp get kingpost`).
 const PENDING = `kingpost:
@@ -38,5 +40,25 @@ describe("checkAgentsMdBlock", () => {
     expect(checkAgentsMdBlock(dir, "now")).toMatchObject({ ok: false, detail: expect.stringContaining("out of date") });
     upsertAgentsMdBlock(dir, "now");
     expect(checkAgentsMdBlock(dir, "now")).toEqual({ label: "AGENTS.md Kingpost block", ok: true });
+  });
+});
+
+describe("claudePostToolHookCoversShell", () => {
+  it("is true for hooks written by this version and false for ones from before shell-write detection", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-doctor-"));
+    upsertClaudeHooks(dir, "/opt/kingpost/dist/index.js");
+    expect(claudePostToolHookCoversShell(JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8")))).toBe(true);
+
+    // The same config as an older release wrote it: PostToolUse matched only Write|Edit.
+    const old = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
+    old.hooks.PostToolUse[0].matcher = "Write|Edit";
+    expect(claudePostToolHookCoversShell(old)).toBe(false);
+  });
+
+  it("is false when someone else's hook matches Bash but Kingpost's doesn't, and for missing config", () => {
+    const foreign = { hooks: { PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo hi" }] }] } };
+    expect(claudePostToolHookCoversShell(foreign)).toBe(false);
+    expect(claudePostToolHookCoversShell({})).toBe(false);
+    expect(claudePostToolHookCoversShell(null)).toBe(false);
   });
 });
