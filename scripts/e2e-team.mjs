@@ -76,6 +76,7 @@ let fake;
 let codexHome;
 let project;
 let sessionCount = 0;
+let lastSession; // appended to every failure: what the harness told the model about each tool call
 
 // Runs one agent session and returns everything the harness sent to the (scripted) model, which is where
 // hook-injected context and MCP tool results show up.
@@ -86,6 +87,7 @@ async function session(name, dir, steps, prompt) {
   const run = await runAsync(cmd, args, { cwd: dir, ...opts });
   const sent = JSON.stringify(fake.requests.map((r) => r.body));
   console.log(`[team/${harness}] ${name} session exit=${run.status}`);
+  lastSession = { name, status: run.status, sent };
   if (process.env.KINGPOST_E2E_DEBUG) writeFileSync(`/tmp/e2e-team-${harness}-${name}-${++sessionCount}.json`, sent);
   return { run, sent, output: (run.stdout ?? "") + (run.stderr ?? "") };
 }
@@ -103,7 +105,10 @@ function excerpt(sent) {
 }
 
 function expect(cond, msg, detail) {
-  if (!cond) fail(msg, detail);
+  if (!cond) {
+    const last = lastSession ? `\n--- last session (${lastSession.name}, exit ${lastSession.status}) tool results ---\n  - ${toolResults(lastSession.sent)}` : "";
+    fail(msg, `${detail ?? ""}${last}`);
+  }
   console.log(`  ok: ${msg.replace(/^expected /, "")}`);
 }
 
