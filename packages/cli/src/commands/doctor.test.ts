@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseClaudeMcpApproval } from "./doctor.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { upsertAgentsMdBlock } from "../config.js";
+import { checkAgentsMdBlock, parseClaudeMcpApproval } from "./doctor.js";
 
 // Real output captured from Claude Code on Windows (`claude mcp get kingpost`).
 const PENDING = `kingpost:
@@ -23,5 +27,16 @@ describe("parseClaudeMcpApproval", () => {
   it("is inconclusive (null) for output it doesn't recognise", () => {
     expect(parseClaudeMcpApproval("")).toBeNull();
     expect(parseClaudeMcpApproval("No MCP server found with name: kingpost")).toBeNull();
+  });
+});
+
+describe("checkAgentsMdBlock", () => {
+  it("passes when the block is current, and points at 'kingpost update' when it is missing or outdated", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-doctor-"));
+    expect(checkAgentsMdBlock(dir, "now")).toMatchObject({ ok: false, detail: expect.stringContaining("kingpost update") });
+    upsertAgentsMdBlock(dir, "before");
+    expect(checkAgentsMdBlock(dir, "now")).toMatchObject({ ok: false, detail: expect.stringContaining("out of date") });
+    upsertAgentsMdBlock(dir, "now");
+    expect(checkAgentsMdBlock(dir, "now")).toEqual({ label: "AGENTS.md Kingpost block", ok: true });
   });
 });

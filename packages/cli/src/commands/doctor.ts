@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
-import { readProjectConfig, getToken } from "../config.js";
+import { readProjectConfig, getToken, agentsMdBlockStatus } from "../config.js";
+import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
 import { CLAUDE_HOOK_EVENTS, CODEX_HOOK_EVENTS, isKingpostClaudeHook, isKingpostCodexHook } from "./resolved-path-hooks.js";
 import { codexAppServerSocketPath } from "../codex-rpc.js";
 
@@ -22,6 +23,19 @@ async function checkServer(serverUrl: string): Promise<Check> {
   } catch (e) {
     return { label: "server reachable", ok: false, detail: e instanceof Error ? e.message : String(e) };
   }
+}
+
+// The wording agents are told to follow lives in AGENTS.md and changes between releases (e.g. proposal and
+// priority guidance), but `init` only writes it once, so an upgraded install can leave a project on old advice.
+export function checkAgentsMdBlock(cwd: string, block: string = AGENTS_MD_BLOCK): Check {
+  const label = "AGENTS.md Kingpost block";
+  const status = agentsMdBlockStatus(cwd, block);
+  if (status === "current") return { label, ok: true };
+  return {
+    label,
+    ok: false,
+    detail: status === "missing" ? "no Kingpost block in AGENTS.md — run 'kingpost update'" : "out of date with this kingpost version — run 'kingpost update'",
+  };
 }
 
 function checkClaudePlugin(cwd: string): Check {
@@ -225,6 +239,7 @@ export async function doctorCommand(cwd: string = process.cwd()): Promise<void> 
     checks.push({ label: "agent registered", ok: !!config.agentId, detail: config.agentId ? undefined : "no agentId yet — will register on next hook/tool call" });
   }
 
+  checks.push(checkAgentsMdBlock(cwd));
   checks.push(checkClaudePlugin(cwd));
   checks.push(checkClaudeResolvedPathHooks(cwd));
   checks.push(checkClaudeMcpConfig(cwd));

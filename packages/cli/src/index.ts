@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
 import { Command } from "commander";
+import { updateCommand } from "./commands/update.js";
 import { initCommand } from "./commands/init.js";
 import { joinCommand } from "./commands/join.js";
 import { hookCommand } from "./commands/hook.js";
@@ -35,6 +36,13 @@ program
   .requiredOption("--harness <harness>", "claude or codex")
   .action(async (_event, opts) => {
     await hookCommand(HarnessSchema.parse(opts.harness));
+  });
+
+program
+  .command("update")
+  .description("refresh this project's AGENTS.md block and hook/MCP configs to match the installed kingpost")
+  .action(() => {
+    updateCommand();
   });
 
 program.command("mcp").action(async () => {

@@ -70,6 +70,18 @@ export function getToken(projectId: string): string | null {
 const AGENTS_MD_MARKER_START = "<!-- kingpost:start -->";
 const AGENTS_MD_MARKER_END = "<!-- kingpost:end -->";
 
+/** Whether AGENTS.md holds a Kingpost block, and if so whether it matches `block` (the current wording). */
+export function agentsMdBlockStatus(cwd: string, block: string): "missing" | "current" | "outdated" {
+  const p = join(cwd, "AGENTS.md");
+  if (!existsSync(p)) return "missing";
+  const existing = readFileSync(p, "utf8");
+  const startIdx = existing.indexOf(AGENTS_MD_MARKER_START);
+  const endIdx = existing.indexOf(AGENTS_MD_MARKER_END);
+  if (startIdx === -1 || endIdx === -1) return "missing";
+  const inside = existing.slice(startIdx + AGENTS_MD_MARKER_START.length, endIdx).trim();
+  return inside === block.trim() ? "current" : "outdated";
+}
+
 export function upsertAgentsMdBlock(cwd: string, block: string): void {
   const p = join(cwd, "AGENTS.md");
   const existing = existsSync(p) ? readFileSync(p, "utf8") : "";

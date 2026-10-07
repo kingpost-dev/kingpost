@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import * as os from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProjectConfig, readProjectConfig, upsertAgentsMdBlock, readCredentials, writeCredential, getToken } from "./config.js";
+import { writeProjectConfig, readProjectConfig, upsertAgentsMdBlock, agentsMdBlockStatus, readCredentials, writeCredential, getToken } from "./config.js";
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -54,6 +54,30 @@ describe("AGENTS.md block", () => {
     expect(content).not.toContain("first version");
     expect(content).toContain("second version");
     expect(content.match(/kingpost:start/g)?.length).toBe(1);
+  });
+});
+
+describe("agentsMdBlockStatus", () => {
+  it("is 'missing' when there is no AGENTS.md or no Kingpost block in it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    expect(agentsMdBlockStatus(dir, "current")).toBe("missing");
+    writeFileSync(join(dir, "AGENTS.md"), "# Project notes\n");
+    expect(agentsMdBlockStatus(dir, "current")).toBe("missing");
+  });
+
+  it("is 'current' when the block matches, and 'outdated' once the wording changes", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    upsertAgentsMdBlock(dir, "version one");
+    expect(agentsMdBlockStatus(dir, "version one")).toBe("current");
+    expect(agentsMdBlockStatus(dir, "version two")).toBe("outdated");
+  });
+
+  it("ignores everything outside the markers", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-"));
+    writeFileSync(join(dir, "AGENTS.md"), "# My own notes\n\nSome rules.\n");
+    upsertAgentsMdBlock(dir, "version one");
+    writeFileSync(join(dir, "AGENTS.md"), readFileSync(join(dir, "AGENTS.md"), "utf8") + "\nMore notes after the block.\n");
+    expect(agentsMdBlockStatus(dir, "version one")).toBe("current");
   });
 });
 

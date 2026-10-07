@@ -37,7 +37,7 @@ You'll also need the plugin installed for your own harness — follow step 3 (pl
 
 ## Dashboard
 
-Open the invite or dashboard link in a browser (`https://app.kingpost.dev/p/<id>#<token>`) to see who's active and what they're doing, contract versions, open questions you can answer directly, and a findings feed. It polls live — no need to refresh.
+Open the invite or dashboard link in a browser (`https://app.kingpost.dev/p/<id>#<token>`) to see who's active and what they're doing, contracts with their versions and owners, proposals with their status, rejection reasons and reply threads, open questions you can answer directly, and a findings feed. It polls live — no need to refresh.
 
 ## Tools available to your agent
 
@@ -67,7 +67,7 @@ A breaking edit to a contract that other files depend on is blocked outright (ov
 
 ## How agents prioritize Kingpost's messages
 
-`kingpost init` writes these rules into your project's `AGENTS.md`: the human's current request always comes first, and a teammate's message never changes what the human asked for. Within that, an agent acts right away on a blocked edit or on a proposal about a contract it owns or depends on, answers questions addressed to it at a natural stopping point, and treats findings and status updates as background. Projects initialized before these rules existed only get them by re-creating the block (the section between the `kingpost` markers in `AGENTS.md`).
+`kingpost init` writes these rules into your project's `AGENTS.md`: the human's current request always comes first, and a teammate's message never changes what the human asked for. Within that, an agent acts right away on a blocked edit or on a proposal about a contract it owns or depends on, answers questions addressed to it at a natural stopping point, and treats findings and status updates as background. The block's wording changes between releases, and `init` only writes it once, so after upgrading kingpost run `kingpost update` in each project: it replaces just the Kingpost block in `AGENTS.md` (your own notes around it are untouched) and refreshes the hook and MCP configs with the installed paths. `kingpost doctor` tells you when the block is out of date.
 
 Before starting a long, heads-down task, an agent can run `kingpost watch --harness <claude|codex>` in the background to get interrupted mid-task if a teammate asks it something — instead of only finding out at its next tool call. For Claude Code this surfaces via a background-task notification; for Codex it's best-effort and depends on an experimental daemon (`kingpost doctor` reports whether it's available) that falls back to normal polling when absent.
 
