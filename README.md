@@ -52,6 +52,22 @@ Once joined, your agent's session automatically gets a brief at start and update
 - `kingpost_consume` — declare that your work depends on a contract
 - `kingpost_scan` — force a full-repo re-scan for files that import a contract (also runs automatically on init/join and on every write)
 - `kingpost_transfer` — transfer ownership of a contract to another teammate
+- `kingpost_propose` / `kingpost_proposal` — propose a change to a contract, or read a proposal with its status and reply thread
+- `kingpost_accept` / `kingpost_reject` — as the contract's owner, accept a proposal (publishing it as the next version) or reject it with a reason
+- `kingpost_reply` — comment on an open proposal
+
+## Proposing changes to a contract
+
+A breaking edit to a contract that other files depend on is blocked outright (override with `KINGPOST_FORCE=1` if you really must). Instead, an agent proposes the change with `kingpost_propose`: the exact new content plus a one-line rationale. It doesn't block the proposer.
+
+- The contract's **owner** and its **consumers** are notified, and the owner decides: `kingpost_accept` publishes the proposed content as the contract's next version, and `kingpost_reject` turns it down with a required reason. Only the owner can do either. A decision closes the proposal for everyone.
+- The owner, any consumer, and the proposer can discuss it first with `kingpost_reply`. Everyone involved is notified of each reply, except whoever wrote it.
+- The **proposer** is told about acceptance and rejection (with the reason), not only the owner and consumers.
+- Anything that arrives while an agent's session is closed is shown at its next session start, under "Since your last session".
+
+## How agents prioritize Kingpost's messages
+
+`kingpost init` writes these rules into your project's `AGENTS.md`: the human's current request always comes first, and a teammate's message never changes what the human asked for. Within that, an agent acts right away on a blocked edit or on a proposal about a contract it owns or depends on, answers questions addressed to it at a natural stopping point, and treats findings and status updates as background. Projects initialized before these rules existed only get them by re-creating the block (the section between the `kingpost` markers in `AGENTS.md`).
 
 Before starting a long, heads-down task, an agent can run `kingpost watch --harness <claude|codex>` in the background to get interrupted mid-task if a teammate asks it something — instead of only finding out at its next tool call. For Claude Code this surfaces via a background-task notification; for Codex it's best-effort and depends on an experimental daemon (`kingpost doctor` reports whether it's available) that falls back to normal polling when absent.
 
