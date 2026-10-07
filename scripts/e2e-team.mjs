@@ -90,6 +90,12 @@ async function session(name, dir, steps, prompt) {
   return { run, sent, output: (run.stdout ?? "") + (run.stderr ?? "") };
 }
 
+// What the harness reported back to the model for each tool call: the quickest way to see why a tool did nothing.
+function toolResults(sent) {
+  const hits = [...sent.matchAll(/(?:"output":"|"type":"tool_result","content":\[\{"type":"text","text":")([^"]{0,300})/g)].map((m) => m[1]);
+  return hits.slice(-8).join("\n  - ");
+}
+
 // The hook-injected context sits deep inside the first request body; show the part around the brief.
 function excerpt(sent) {
   const at = sent.indexOf("Kingpost brief");
@@ -192,7 +198,7 @@ try {
   );
   expect(a3.sent.includes(`Proposal for you: [${proposalId}]`) && a3.sent.includes(RATIONALE), "expected alice's session start to show bob's proposal (the owner is told)", excerpt(a3.sent));
   const detail = await api(project, "GET", `/contracts/${apiContract.id}`);
-  expect(detail.versions[0].version === 2 && detail.versions[0].content === PROPOSED_BODY, "expected accepting the proposal to publish its content as v2 (kingpost_accept)", JSON.stringify(detail.versions[0]));
+  expect(detail.versions[0].version === 2 && detail.versions[0].content === PROPOSED_BODY, "expected accepting the proposal to publish its content as v2 (kingpost_accept)", `${JSON.stringify(detail.versions[0])}\nalice's tool results:\n  - ${toolResults(a3.sent)}\nexit=${a3.run.status}\n${a3.output.slice(-1200)}`);
   expect(detail.contract.ownerUserName === "bob", "expected kingpost_transfer to make bob the contract's owner", JSON.stringify(detail.contract));
 
   // 6. bob sees the acceptance and edits the contract
