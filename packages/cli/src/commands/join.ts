@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
+import { writeProjectConfig, writeCredential, upsertAgentsMdBlock, upsertGitignoreEntries } from "../config.js";
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
 import { writeResolvedPathHooks } from "./resolved-path-hooks.js";
 import { writeResolvedPathMcpConfig } from "./resolved-path-mcp.js";
@@ -36,6 +36,8 @@ export async function joinCommand(link: string, opts: { name: string; cwd?: stri
   upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
   writeResolvedPathHooks(cwd);
   writeResolvedPathMcpConfig(cwd);
+  const ignored = upsertGitignoreEntries(cwd);
+  if (ignored.length > 0) console.log(`Added ${ignored.length} per-machine Kingpost file(s) to .gitignore (${ignored.join(", ")}) so they aren't committed by accident.`);
 
   // Initial full-repo scan for derived consumer relationships. No agent is registered yet at this
   // point, so relationships are recorded with a null agentId. scanRepo never throws, but guard

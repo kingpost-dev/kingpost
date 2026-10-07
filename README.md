@@ -31,7 +31,7 @@ MIT licensed. The hosted service lives at https://kingpost.dev.
 
 ## Starting a new project
 
-`kingpost init --name <project>` in your repo root. This creates the project on the server and prints an invite link and a dashboard link to share with your team, and adds a Kingpost block to your `AGENTS.md`.
+`kingpost init --name <project>` in your repo root. This creates the project on the server and prints an invite link and a dashboard link to share with your team, and adds a Kingpost block to your `AGENTS.md`. It also adds the per-machine files it writes (`.kingpost.json`, `.mcp.json`, `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`) to `.gitignore`, so only the `AGENTS.md` block is shared through git.
 
 You'll also need the plugin installed for your own harness — follow step 3 (plugin install) and step 4 (`kingpost doctor`) from the Quickstart above, using your own newly-created project instead of an invite link.
 

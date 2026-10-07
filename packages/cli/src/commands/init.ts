@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { DEFAULT_SERVER_URL, projectConfigPath, readProjectConfig, writeProjectConfig, writeCredential, upsertAgentsMdBlock } from "../config.js";
+import { DEFAULT_SERVER_URL, projectConfigPath, readProjectConfig, writeProjectConfig, writeCredential, upsertAgentsMdBlock, upsertGitignoreEntries } from "../config.js";
 import { createProject, ApiClient } from "../api.js";
 import { scanRepo } from "../scan/scan-repo.js";
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
@@ -28,6 +28,8 @@ export async function initCommand(name: string, opts: { serverUrl?: string; cwd?
   upsertAgentsMdBlock(cwd, AGENTS_MD_BLOCK);
   writeResolvedPathHooks(cwd);
   writeResolvedPathMcpConfig(cwd);
+  const ignored = upsertGitignoreEntries(cwd);
+  if (ignored.length > 0) console.log(`Added ${ignored.length} per-machine Kingpost file(s) to .gitignore (${ignored.join(", ")}) so they aren't committed by accident.`);
 
   // Initial full-repo scan for derived consumer relationships. No agent is registered yet at this
   // point, so relationships are recorded with a null agentId. scanRepo never throws, but guard

@@ -1,4 +1,4 @@
-import { agentsMdBlockStatus, readProjectConfig, upsertAgentsMdBlock } from "../config.js";
+import { agentsMdBlockStatus, readProjectConfig, upsertAgentsMdBlock, upsertGitignoreEntries } from "../config.js";
 import { AGENTS_MD_BLOCK } from "./agents-md-block.js";
 import { writeResolvedPathHooks } from "./resolved-path-hooks.js";
 import { writeResolvedPathMcpConfig } from "./resolved-path-mcp.js";
@@ -26,4 +26,6 @@ export function updateCommand(cwd: string = process.cwd()): void {
         : "AGENTS.md: updated the Kingpost block to the current version."
   );
   console.log("Hook and MCP configs: refreshed with this install's paths.");
+  const ignored = upsertGitignoreEntries(cwd);
+  if (ignored.length > 0) console.log(`.gitignore: added ${ignored.join(", ")} (per-machine Kingpost files that shouldn't be committed).`);
 }

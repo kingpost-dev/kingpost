@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProjectConfig, upsertAgentsMdBlock } from "../config.js";
@@ -56,6 +56,16 @@ describe("updateCommand", () => {
     expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(true);
     expect(existsSync(join(dir, ".codex", "hooks.json"))).toBe(true);
     expect(existsSync(join(dir, ".mcp.json"))).toBe(true);
+  });
+
+  it("adds the per-machine Kingpost files to .gitignore in a git repo, so existing projects get it too", () => {
+    mkdirSync(join(dir, ".git"));
+    writeProjectConfig(dir, { serverUrl: "https://example.invalid", projectId: "proj_1" });
+    updateCommand(dir);
+    const ignore = readFileSync(join(dir, ".gitignore"), "utf8");
+    expect(ignore).toContain(".kingpost.json");
+    expect(ignore).toContain(".mcp.json");
+    expect(log.mock.calls.flat().join("\n")).toContain(".gitignore");
   });
 
   it("refuses, writing nothing, in a directory that isn't a Kingpost project", () => {

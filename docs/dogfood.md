@@ -20,18 +20,11 @@ Then install the plugin for your harness and approve it (see "Setup for everyone
 your teammates. Treat it like a password: it contains the project token.
 
 **What to commit and what not to.** Commit the Kingpost block in `AGENTS.md`; that's the shared guidance every agent
-reads. Do **not** commit these, because each holds one person's machine state (an agent identity, absolute paths into
-their own install) and `kingpost join` regenerates them on every machine:
-
-```
-.kingpost.json
-.mcp.json
-.claude/
-.codex/
-```
-
-Add them to `.gitignore` before anyone commits. (`kingpost init` doesn't do this for you yet; if that bit you, put it on
-the friction list.)
+reads. Don't commit the files Kingpost writes machine-specific content into (an agent identity, absolute paths into
+one person's install): `.kingpost.json`, `.mcp.json`, `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`.
+`kingpost init` and `kingpost join` add them to `.gitignore` for you (in a git repo), and `kingpost update` does it for
+projects set up earlier. If your repo already tracks one of those files, ignoring it doesn't un-track it; you'll see
+Kingpost's entries as a local change, and shouldn't commit them.
 
 ## Setup for everyone (each teammate, each machine)
 

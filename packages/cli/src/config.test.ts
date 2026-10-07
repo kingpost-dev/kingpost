@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import * as os from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProjectConfig, readProjectConfig, upsertAgentsMdBlock, agentsMdBlockStatus, readCredentials, writeCredential, getToken } from "./config.js";
+import { writeProjectConfig, readProjectConfig, upsertAgentsMdBlock, agentsMdBlockStatus, upsertGitignoreEntries, GITIGNORE_ENTRIES, readCredentials, writeCredential, getToken } from "./config.js";
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -54,6 +54,63 @@ describe("AGENTS.md block", () => {
     expect(content).not.toContain("first version");
     expect(content).toContain("second version");
     expect(content.match(/kingpost:start/g)?.length).toBe(1);
+  });
+});
+
+describe("upsertGitignoreEntries", () => {
+  const gitRepo = () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-gi-"));
+    mkdirSync(join(dir, ".git"));
+    return dir;
+  };
+  const lines = (dir: string) => readFileSync(join(dir, ".gitignore"), "utf8").split("\n");
+
+  it("creates .gitignore with the per-machine Kingpost files in a git repo", () => {
+    const dir = gitRepo();
+    const added = upsertGitignoreEntries(dir);
+    expect(added).toEqual(GITIGNORE_ENTRIES);
+    for (const entry of GITIGNORE_ENTRIES) expect(lines(dir)).toContain(entry);
+  });
+
+  it("leaves a directory that isn't in a git repo alone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kp-gi-"));
+    expect(upsertGitignoreEntries(dir)).toEqual([]);
+    expect(existsSync(join(dir, ".gitignore"))).toBe(false);
+  });
+
+  it("finds the repo from a subdirectory", () => {
+    const root = gitRepo();
+    const sub = join(root, "packages", "app");
+    mkdirSync(sub, { recursive: true });
+    expect(upsertGitignoreEntries(sub)).toEqual(GITIGNORE_ENTRIES);
+    expect(existsSync(join(sub, ".gitignore"))).toBe(true);
+  });
+
+  it("keeps what is already in .gitignore, even without a trailing newline, and appends after it", () => {
+    const dir = gitRepo();
+    writeFileSync(join(dir, ".gitignore"), "node_modules\ndist");
+    upsertGitignoreEntries(dir);
+    const out = lines(dir);
+    expect(out.slice(0, 2)).toEqual(["node_modules", "dist"]);
+    expect(out).toContain(".kingpost.json");
+  });
+
+  it("adds only what is missing, counting a broader existing pattern as covering a file", () => {
+    const dir = gitRepo();
+    writeFileSync(join(dir, ".gitignore"), "/.kingpost.json\n.claude/\n");
+    const added = upsertGitignoreEntries(dir);
+    expect(added).not.toContain(".kingpost.json"); // present, with a leading slash
+    expect(added).not.toContain(".claude/settings.json"); // covered by .claude/
+    expect(added).toContain(".mcp.json");
+    expect(lines(dir).filter((l) => l.replace(/^\//, "") === ".kingpost.json")).toHaveLength(1);
+  });
+
+  it("is idempotent: a second call changes nothing", () => {
+    const dir = gitRepo();
+    upsertGitignoreEntries(dir);
+    const before = readFileSync(join(dir, ".gitignore"), "utf8");
+    expect(upsertGitignoreEntries(dir)).toEqual([]);
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe(before);
   });
 });
 

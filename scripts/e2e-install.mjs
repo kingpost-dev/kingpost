@@ -7,7 +7,7 @@
 //
 // Needs `claude` and `codex` on PATH so doctor can see both. Creates a throwaway project on the server and
 // deletes it again. Set KINGPOST_E2E_EXPECT_VERSION to assert which version is installed.
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { deleteProject, fail, installedCli, loadProject, makeTempDir, reportFailure, runKingpost, server } from "./e2e-lib.mjs";
 
@@ -15,6 +15,9 @@ const label = "install";
 const dirOwner = makeTempDir("kp-e2e-install-owner-");
 const dirJoiner = makeTempDir("kp-e2e-install-joiner-");
 let project;
+// Real projects are git repos; `init`/`join` only touch .gitignore inside one.
+for (const d of [dirOwner, dirJoiner]) mkdirSync(join(d, ".git"));
+const GITIGNORED = [".kingpost.json", ".mcp.json", ".claude/settings.json", ".codex/hooks.json", ".codex/config.toml"];
 
 function expect(cond, msg, detail) {
   if (!cond) fail(msg, detail);
@@ -76,6 +79,9 @@ try {
   }
 
   // The configs point at absolute paths inside THIS install. If any of those don't exist, the harness silently runs nothing.
+  const ownerIgnore = read(dirOwner, ".gitignore").split("\n");
+  expect(GITIGNORED.every((e) => ownerIgnore.includes(e)), "expected init to add the per-machine Kingpost files to .gitignore", ownerIgnore.join("\n"));
+
   const configs = [".claude/settings.json", ".codex/hooks.json", ".mcp.json", ".codex/config.toml"].map((rel) => read(dirOwner, rel)).join("\n");
   const paths = [...new Set(referencedPaths(configs))];
   expect(paths.length > 0, "expected the hook and MCP configs to reference absolute paths", configs.slice(0, 1500));
@@ -85,6 +91,7 @@ try {
   const joined = runKingpost(["join", link, "--name", "joiner"], { cwd: dirJoiner });
   expect(joined.status === 0, "expected `kingpost join <invite link>` to succeed from a second directory", out(joined));
   expect(existsSync(join(dirJoiner, ".mcp.json")) && existsSync(join(dirJoiner, ".codex/hooks.json")), "expected join to write the same hook and MCP configs");
+  expect(GITIGNORED.every((e) => read(dirJoiner, ".gitignore").split("\n").includes(e)), "expected join to add them to .gitignore too");
   expect(loadProject(dirJoiner).config.projectId === project.config.projectId, "expected join to link the second directory to the same project");
 
   // doctor, on a machine that has the project but none of the optional plugin steps yet.
