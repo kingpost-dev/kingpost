@@ -58,17 +58,25 @@ async function detectBreakingChange(
   if (format !== "json-schema" && format !== "openapi" && format !== "drizzle") return { breaking: false };
 
   try {
+    // Why there is no previous version to diff against, so the log can tell a slow server from an
+    // unregistered contract from a version with no stored content.
+    let miss = `the lookup didn't finish within ${lookupTimeoutMs}ms`;
     const lookup = (async (): Promise<string | null> => {
       const { contracts } = await client.listContracts();
       const existing = contracts.find((c) => c.path === path);
-      if (!existing) return null;
+      if (!existing) {
+        miss = `no registered contract has that path (registry has: ${contracts.map((c) => c.path).join(", ") || "nothing"})`;
+        return null;
+      }
       const { versions } = await client.getContract(existing.id);
-      return versions[0]?.content ?? null;
+      const content = versions[0]?.content ?? null;
+      if (content === null) miss = `contract ${existing.id} has ${versions.length} version(s) but the latest has no stored content`;
+      return content;
     })();
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), lookupTimeoutMs));
     const previousContent = await Promise.race([lookup, timeout]);
     if (!previousContent) {
-      log(`breaking-change check for ${path}: no previous version found within ${lookupTimeoutMs}ms (slow lookup, or the contract isn't registered yet), not blocking`);
+      log(`breaking-change check for ${path}: no previous version to compare against (${miss}), not blocking`);
       return { breaking: false };
     }
 
