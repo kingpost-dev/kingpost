@@ -55,16 +55,26 @@ function countAnthropicToolResults(messages) {
 // MCP tools are offered grouped in a namespace tool ({type:"namespace", name, tools:[{name}]}). How a namespace
 // and a tool name are written differs between Codex runs (and platforms), and a call that doesn't match what was
 // offered is rejected ("unsupported call"), so address the tool exactly as THIS request offered it.
-function resolveNamespacedTool(offered, step) {
+function resolveNamespacedToolOffered(offered, step) {
   for (const t of offered ?? []) {
     if (t.type !== "namespace") continue;
     const match = (t.tools ?? []).find((x) => x.name === step.tool || x.name.endsWith(step.tool));
     if (match) return { namespace: t.name, name: match.name };
   }
-  return { namespace: step.namespace, name: step.tool };
+  return null;
 }
+const resolveNamespacedTool = (offered, step) => resolveNamespacedToolOffered(offered, step) ?? { namespace: step.namespace, name: step.tool };
 
-function responsesStream(res, step, offered) {
+// `codex exec` sends its first model request without waiting for MCP servers to finish starting, so on a slow
+// machine the Kingpost tools can be missing from the tool list. When the script needs one that isn't offered
+// yet, answer with a short shell sleep instead (tagged "warm_" so it doesn't count as a script step): by
+// Codex's next request the server has connected. After a few tries give up and let the call fail visibly.
+const WARMUP_CALL_PREFIX = "warm";
+const MAX_WARMUPS = 6;
+const WARMUP_STEP = { tool: "exec_command", input: { cmd: 'node -e "setTimeout(function(){},2500)"' }, warmup: true };
+
+function responsesStream(res, step, offered, warmupsSoFar) {
+  if (step.namespace && warmupsSoFar < MAX_WARMUPS && !resolveNamespacedToolOffered(offered, step)) step = WARMUP_STEP;
   const respId = id("resp");
   const events = [["response.created", { type: "response.created", response: { id: respId } }]];
   let item;
@@ -72,7 +82,7 @@ function responsesStream(res, step, offered) {
     item = { type: "custom_tool_call", id: id("ctc"), call_id: id("call"), name: "apply_patch", input: step.input };
   } else if (step.tool) {
     const target = step.namespace ? resolveNamespacedTool(offered, step) : { name: step.tool };
-    item = { type: "function_call", id: id("fc"), call_id: id("call"), name: target.name, arguments: JSON.stringify(step.input), ...(target.namespace ? { namespace: target.namespace } : {}) };
+    item = { type: "function_call", id: id("fc"), call_id: id(step.warmup ? WARMUP_CALL_PREFIX : "call"), name: target.name, arguments: JSON.stringify(step.input), ...(target.namespace ? { namespace: target.namespace } : {}) };
   } else {
     item = { type: "message", id: id("msg"), role: "assistant", content: [{ type: "output_text", text: step.text }] };
   }
@@ -85,9 +95,11 @@ function responsesStream(res, step, offered) {
   sse(res, events);
 }
 
-function countResponsesToolOutputs(input) {
-  return (input ?? []).filter((i) => i.type === "function_call_output" || i.type === "custom_tool_call_output").length;
-}
+const isWarmup = (item) => String(item.call_id ?? "").startsWith(WARMUP_CALL_PREFIX);
+const toolOutputs = (input) => (input ?? []).filter((i) => i.type === "function_call_output" || i.type === "custom_tool_call_output");
+// Script progress = real tool outputs only; warm-ups are bookkeeping.
+const countResponsesToolOutputs = (input) => toolOutputs(input).filter((i) => !isWarmup(i)).length;
+const countWarmups = (input) => toolOutputs(input).filter(isWarmup).length;
 
 export async function startFakeModel(initial = {}) {
   // The scripts can be swapped between agent sessions with setSteps().
@@ -123,7 +135,7 @@ export async function startFakeModel(initial = {}) {
       if (req.method === "POST" && req.url.includes("/responses")) {
         const isMain = Array.isArray(json.tools) && json.tools.length > 0;
         const step = isMain ? scripts.codexSteps[Math.min(countResponsesToolOutputs(json.input), scripts.codexSteps.length - 1)] : { text: "ok" };
-        return responsesStream(res, step, json.tools);
+        return responsesStream(res, step, json.tools, countWarmups(json.input));
       }
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: { message: `fake model: no handler for ${req.method} ${req.url}` } }));
