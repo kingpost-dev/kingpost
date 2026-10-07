@@ -293,7 +293,7 @@ describe("kingpost_accept", () => {
     const tool = (server as any)._registeredTools?.["kingpost_accept"];
     if (!tool) throw new Error("Could not find kingpost_accept's registered callback on the McpServer instance.");
     const result = await tool.handler({ proposalId: "proposal_1" }, {});
-    expect(acceptSpy).toHaveBeenCalledWith("proposal_1");
+    expect(acceptSpy).toHaveBeenCalledWith("proposal_1", "agent_1"); // names the acting agent so the server can check ownership
     expect(result.content[0].text).toContain("contracts/api.json");
     expect(result.content[0].text).toContain("v3");
   });
@@ -303,6 +303,57 @@ describe("kingpost_accept", () => {
     const server = buildMcpServer(cwd);
     const tool = (server as any)._registeredTools?.["kingpost_accept"];
     const result = await tool.handler({ proposalId: "proposal_1" }, {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("kingpost error");
+  });
+});
+
+describe("kingpost_reject, kingpost_reply and kingpost_proposal", () => {
+  let cwd: string;
+  const toolFor = (name: string) => {
+    const tool = (buildMcpServer(cwd) as any)._registeredTools?.[name];
+    if (!tool) throw new Error(`Could not find ${name}'s registered callback on the McpServer instance.`);
+    return tool;
+  };
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "kp-mcp-"));
+    writeProjectConfig(cwd, { serverUrl: "https://example.invalid", projectId: "proj_1", agentId: "agent_1" });
+    writeCredential("proj_1", "tok_1");
+    vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({ delta: emptyDelta(), cursor: 0 });
+  });
+
+  it("rejects a proposal as the calling agent, with the reason", async () => {
+    const spy = vi.spyOn(apiModule.ApiClient.prototype, "rejectProposal").mockResolvedValue({ proposal: { id: "proposal_1" } as any });
+    const result = await toolFor("kingpost_reject").handler({ proposalId: "proposal_1", reason: "breaks billing" }, {});
+    expect(spy).toHaveBeenCalledWith("proposal_1", { byAgentId: "agent_1", reason: "breaks billing" });
+    expect(result.content[0].text).toContain("Rejected [proposal_1]");
+  });
+
+  it("replies to a proposal as the calling agent", async () => {
+    const spy = vi.spyOn(apiModule.ApiClient.prototype, "replyToProposal").mockResolvedValue({ reply: { id: "reply_1" } as any });
+    const result = await toolFor("kingpost_reply").handler({ proposalId: "proposal_1", text: "keep id optional?" }, {});
+    expect(spy).toHaveBeenCalledWith("proposal_1", { byAgentId: "agent_1", text: "keep id optional?" });
+    expect(result.content[0].text).toContain("Reply posted on [proposal_1]");
+  });
+
+  it("shows a proposal with its status, content and reply thread", async () => {
+    vi.spyOn(apiModule.ApiClient.prototype, "getProposal").mockResolvedValue({
+      proposal: { id: "proposal_1", contractId: "c1", proposedByAgentId: "agent_2", newContent: '{"a":2}', rationale: "widen", status: "rejected", rejectionReason: "breaks billing", createdAt: "" },
+      replies: [{ id: "r1", proposalId: "proposal_1", byAgentId: "agent_3", byUserName: "carol", text: "careful", createdAt: "" }],
+    } as any);
+    const text = (await toolFor("kingpost_proposal").handler({ proposalId: "proposal_1" }, {})).content[0].text;
+    expect(text).toContain("rejected");
+    expect(text).toContain("breaks billing");
+    expect(text).toContain('{"a":2}');
+    expect(text).toContain("carol: careful");
+  });
+
+  it.each(["kingpost_reject", "kingpost_reply", "kingpost_proposal"])("%s returns a readable error instead of throwing when the server call fails", async (name) => {
+    vi.spyOn(apiModule.ApiClient.prototype, "rejectProposal").mockRejectedValue(new Error("kingpost server returned 403"));
+    vi.spyOn(apiModule.ApiClient.prototype, "replyToProposal").mockRejectedValue(new Error("kingpost server returned 403"));
+    vi.spyOn(apiModule.ApiClient.prototype, "getProposal").mockRejectedValue(new Error("kingpost server returned 404"));
+    const result = await toolFor(name).handler({ proposalId: "p", reason: "r", text: "t" }, {});
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("kingpost error");
   });

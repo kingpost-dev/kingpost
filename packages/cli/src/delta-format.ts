@@ -15,5 +15,11 @@ export function renderDeltaLines(delta: Delta): string[] {
   for (const s of delta.overlappingClaims) lines.push(`Heads up: another agent is touching ${s.claims.join(", ")}`);
   for (const p of delta.proposalsForMe) lines.push(`Proposal for you: [${p.proposal.id}] change to ${p.contract.path} — ${p.proposal.rationale}`);
   for (const p of delta.proposalsAcceptedForMe) lines.push(`Proposal accepted: [${p.proposal.id}] ${p.contract.path} is now v${p.version.version}`);
+  for (const p of delta.proposalsRejectedForMe) {
+    lines.push(`Proposal rejected: [${p.proposal.id}] change to ${p.contract.path} was turned down — ${p.proposal.rejectionReason ?? "no reason given"}`);
+  }
+  for (const p of delta.proposalRepliesForMe) {
+    lines.push(`Reply on proposal [${p.proposal.id}] (${p.contract.path}) from ${p.reply.byUserName}: ${p.reply.text}`);
+  }
   return lines;
 }

@@ -55,13 +55,12 @@ describe("handleSessionStart", () => {
     // so an answer to this agent's own question (no longer "open", so absent from the brief) was lost.
     vi.spyOn(apiModule.ApiClient.prototype, "getDelta").mockResolvedValue({
       delta: {
-        contractsChanged: [{ contract: { path: "contracts/api.json" }, version: { version: 2, breaking: false } }],
-        questionsForMe: [],
-        answersToMe: [{ question: { id: "q1" }, answer: { text: "Use OAuth with PKCE" } }],
-        findings: [],
-        overlappingClaims: [],
-        proposalsForMe: [{ proposal: { id: "p1", rationale: "drop age" }, contract: { path: "contracts/user.json" } }],
-        proposalsAcceptedForMe: [],
+        ...emptyDelta(),
+        contractsChanged: [{ contract: { path: "contracts/api.json" }, version: { version: 2, breaking: false } }] as any,
+        answersToMe: [{ question: { id: "q1" }, answer: { text: "Use OAuth with PKCE" } }] as any,
+        proposalsForMe: [{ proposal: { id: "p1", rationale: "drop age" }, contract: { path: "contracts/user.json" } }] as any,
+        proposalsRejectedForMe: [{ proposal: { id: "p2", rejectionReason: "breaks billing" }, contract: { path: "contracts/api.json" } }] as any,
+        proposalRepliesForMe: [{ proposal: { id: "p3" }, contract: { path: "contracts/api.json" }, reply: { byUserName: "carol", text: "keep id optional?" } }] as any,
       },
       cursor: 5,
     } as any);
@@ -69,6 +68,8 @@ describe("handleSessionStart", () => {
     expect(out).toContain("Since your last session:");
     expect(out).toContain("Answered: [q1] Use OAuth with PKCE");
     expect(out).toContain("Proposal for you: [p1] change to contracts/user.json");
+    expect(out).toContain("Proposal rejected: [p2] change to contracts/api.json was turned down — breaks billing");
+    expect(out).toContain("Reply on proposal [p3] (contracts/api.json) from carol: keep id optional?");
     // The brief already lists contracts, so the delta's contract line must not be repeated.
     expect(out).not.toContain("Contract updated");
   });

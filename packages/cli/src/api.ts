@@ -1,4 +1,4 @@
-import type { Agent, Contract, ContractVersion, Consumer, Question, Answer, Finding, Delta, Proposal } from "@kingpost/protocol";
+import type { Agent, Contract, ContractVersion, Consumer, Question, Answer, Finding, Delta, Proposal, ProposalReply } from "@kingpost/protocol";
 
 const TIMEOUT_MS = 1500;
 
@@ -85,8 +85,20 @@ export class ApiClient {
     return this.request<{ proposal: Proposal }>(`/contracts/${contractId}/proposals`, { method: "POST", body: JSON.stringify(body) });
   }
 
-  acceptProposal(proposalId: string) {
-    return this.request<{ proposal: Proposal; contract: Contract; version: ContractVersion }>(`/proposals/${proposalId}/accept`, { method: "POST" });
+  acceptProposal(proposalId: string, byAgentId: string) {
+    return this.request<{ proposal: Proposal; contract: Contract; version: ContractVersion }>(`/proposals/${proposalId}/accept`, { method: "POST", body: JSON.stringify({ byAgentId }) });
+  }
+
+  rejectProposal(proposalId: string, body: { byAgentId: string; reason: string }) {
+    return this.request<{ proposal: Proposal }>(`/proposals/${proposalId}/reject`, { method: "POST", body: JSON.stringify(body) });
+  }
+
+  replyToProposal(proposalId: string, body: { byAgentId: string; text: string }) {
+    return this.request<{ reply: ProposalReply }>(`/proposals/${proposalId}/replies`, { method: "POST", body: JSON.stringify(body) });
+  }
+
+  getProposal(proposalId: string) {
+    return this.request<{ proposal: Proposal; replies: ProposalReply[] }>(`/proposals/${proposalId}`, { method: "GET" });
   }
 }
 

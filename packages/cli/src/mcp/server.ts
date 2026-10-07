@@ -210,14 +210,71 @@ export function buildMcpServer(cwd: string) {
 
   server.tool(
     "kingpost_accept",
-    "Accept a proposal (by id, from a brief or delta) as the contract's owner — publishes the proposed content as a new version and notifies consumers.",
+    "Accept a proposal (by id, from a brief or delta) as the contract's owner — publishes the proposed content as a new version and notifies the proposer and consumers. Only the contract's owner can accept.",
     { proposalId: z.string() },
     async ({ proposalId }) => {
       try {
         const { client, agentId } = ctx();
-        const { contract, version } = await client.acceptProposal(proposalId);
+        const { contract, version } = await client.acceptProposal(proposalId, agentId);
         const suffix = await renderDeltaSuffix(client, agentId);
         return { content: [{ type: "text" as const, text: `Proposal [${proposalId}] accepted. ${contract.path} is now v${version.version}.${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
+  server.tool(
+    "kingpost_reject",
+    "Reject a proposal (by id) as the contract's owner, with a reason. This closes it for everyone and notifies the proposer and the contract's consumers. Only the owner can reject; if you only need more information or have a concern, use kingpost_reply instead.",
+    { proposalId: z.string(), reason: z.string() },
+    async ({ proposalId, reason }) => {
+      try {
+        const { client, agentId } = ctx();
+        await client.rejectProposal(proposalId, { byAgentId: agentId, reason });
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return { content: [{ type: "text" as const, text: `Rejected [${proposalId}]. The proposer and consumers have been told.${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
+  server.tool(
+    "kingpost_reply",
+    "Reply on an open proposal (by id) — to raise a concern, ask a question, or answer one. The contract's owner, its consumers and the proposer can reply, and all of them are notified. Does not accept or reject anything.",
+    { proposalId: z.string(), text: z.string() },
+    async ({ proposalId, text }) => {
+      try {
+        const { client, agentId } = ctx();
+        await client.replyToProposal(proposalId, { byAgentId: agentId, text });
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return { content: [{ type: "text" as const, text: `Reply posted on [${proposalId}]. Everyone involved has been told.${suffix}` }] };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+  );
+
+  server.tool(
+    "kingpost_proposal",
+    "Read a proposal (by id): its status, the proposed content, the rationale, any rejection reason, and the reply thread. Read this before accepting, rejecting or replying.",
+    { proposalId: z.string() },
+    async ({ proposalId }) => {
+      try {
+        const { client, agentId } = ctx();
+        const { proposal, replies } = await client.getProposal(proposalId);
+        const thread = replies.length > 0 ? replies.map((r) => `  ${r.byUserName}: ${r.text}`).join("\n") : "  (no replies)";
+        const rejected = proposal.status === "rejected" ? `\nRejection reason: ${proposal.rejectionReason ?? "none given"}` : "";
+        const suffix = await renderDeltaSuffix(client, agentId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Proposal [${proposal.id}] on contract [${proposal.contractId}] — status: ${proposal.status}\nRationale: ${proposal.rationale}${rejected}\nProposed content:\n${proposal.newContent}\nReplies:\n${thread}${suffix}`,
+            },
+          ],
+        };
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
       }

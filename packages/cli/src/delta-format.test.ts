@@ -50,6 +50,29 @@ describe("renderDeltaLines", () => {
     expect(lines).toEqual(["Proposal accepted: [proposal_1] contracts/api.json is now v3"]);
   });
 
+  it("renders a rejected proposal with the owner's reason", () => {
+    const delta = emptyDelta();
+    delta.proposalsRejectedForMe.push({
+      type: "proposal_rejected",
+      proposal: { id: "proposal_1", contractId: "contract_1", proposedByAgentId: "agent_2", newContent: "{}", rationale: "tighten validation", status: "rejected", rejectionReason: "breaks billing", createdAt: "2026-09-29T00:00:00.000Z" },
+      contract: { id: "contract_1", path: "contracts/api.json", format: "json-schema", currentVersion: 2, ownerAgentId: "agent_1", ownerUserName: "sam", createdAt: "2026-09-29T00:00:00.000Z" },
+      consumerUserNames: [],
+    });
+    expect(renderDeltaLines(delta)).toEqual(["Proposal rejected: [proposal_1] change to contracts/api.json was turned down — breaks billing"]);
+  });
+
+  it("renders a reply on a proposal with who wrote it", () => {
+    const delta = emptyDelta();
+    delta.proposalRepliesForMe.push({
+      type: "proposal_replied",
+      proposal: { id: "proposal_1", contractId: "contract_1", proposedByAgentId: "agent_2", newContent: "{}", rationale: "tighten validation", status: "open", createdAt: "2026-09-29T00:00:00.000Z" },
+      contract: { id: "contract_1", path: "contracts/api.json", format: "json-schema", currentVersion: 2, ownerAgentId: "agent_1", ownerUserName: "sam", createdAt: "2026-09-29T00:00:00.000Z" },
+      reply: { id: "reply_1", proposalId: "proposal_1", byAgentId: "agent_3", byUserName: "carol", text: "keep id optional?", createdAt: "2026-09-29T00:00:00.000Z" },
+      consumerUserNames: [],
+    });
+    expect(renderDeltaLines(delta)).toEqual(["Reply on proposal [proposal_1] (contracts/api.json) from carol: keep id optional?"]);
+  });
+
   it("renders proposal fields alongside other delta fields", () => {
     const delta = emptyDelta();
     delta.findings.push({ type: "finding_published", finding: { id: "f1", agentId: "agent_2", text: "watch out for X", paths: [], createdAt: "2026-09-29T00:00:00.000Z" } });

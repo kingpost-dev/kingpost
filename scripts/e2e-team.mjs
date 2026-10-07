@@ -11,9 +11,14 @@
 //   4. bob    proposes a breaking change to alice's contract
 //   5. alice  sees the proposal at session start, accepts it, and hands the contract to bob
 //   6. bob    sees the new contract version at session start, then edits the contract: allowed through (it
-//             isn't breaking) and published as the next version
-//             (The accept notification itself goes to the contract's owner and consumers, not to the
-//             proposer, so bob isn't expected to be told his proposal was accepted.)
+//             isn't breaking) and published as the next version. Bob now owns the contract.
+//   7. alice  proposes a change to it (P2)
+//   8. bob    (the owner) sees P2 at session start, reads it, and replies asking for a tweak
+//   9. alice  sees bob's reply at session start and replies back
+//  10. bob    sees alice's reply, then rejects P2 with a reason
+//  11. alice  sees the rejection (and its reason) at session start, then proposes a better change (P3)
+//  12. bob    accepts P3
+//  13. alice  is told her proposal was accepted (the proposer is notified, not only owner and consumers)
 //
 // Not covered here: the PreToolUse "claims overlap" / "contract changed recently" advisories. Those use a
 // cache that each prompt's delta overwrites, and a headless session has no gap between SessionStart and its
@@ -50,6 +55,8 @@ const NEW_CONTRACT_BODY = '{"type":"object","properties":{"id":{"type":"string"}
 const PROPOSED_BODY = '{"type":"object","properties":{}}'; // removes id: breaking for any consumer
 const FOLLOWUP_BODY = '{"type":"object","properties":{"label":{"type":"string"}}}'; // adds an optional field: not breaking
 const RATIONALE = "drop the id field";
+const P2_BODY = '{"type":"object","properties":{"label":{"type":"string"},"id":{"type":"number"}}}';
+const P3_BODY = '{"type":"object","properties":{"label":{"type":"string"},"note":{"type":"string"}}}';
 
 // One generic step list per agent session, rendered for either harness's tool vocabulary.
 const mcp = (tool, input) => ({ mcp: tool, input });
@@ -220,7 +227,75 @@ try {
   expect(// Codex's apply_patch ends the files it creates with a newline, Claude's Write doesn't.
     final.contract.currentVersion === 3 && final.versions[0].content.trim() === FOLLOWUP_BODY, "expected bob's non-breaking edit to be allowed and published as v3", JSON.stringify(final.versions[0]) + `\nalice config: ${readFileSync(join(dirAlice, ".kingpost.json"), "utf8")}\nbob config: ${readFileSync(join(dirBob, ".kingpost.json"), "utf8")}\nproject: ${project.config.projectId}` + b3.output.slice(-1500));
 
-  console.log(`PASS [team/${harness}, fake model]: status/claims, ask, finding, contract publish, brief injection, answer, delivery, claims in brief, propose, accept, transfer, non-breaking edit published`);
+  // 7-13: discussion, rejection, and a proposal that is accepted, with everyone related kept informed.
+  const proposalIdFrom = (sent) => sent.match(/Proposal \[(proposal_[a-z0-9]+)\] created/)?.[1];
+  const a4 = await session(
+    "alice",
+    dirAlice,
+    [mcp("kingpost_propose", { contractId: apiContract.id, newContent: P2_BODY, rationale: "add a numeric id back" }), say("Done.")],
+    "Propose adding a numeric id to the api contract."
+  );
+  const p2 = proposalIdFrom(a4.sent);
+  expect(p2, "expected alice's second kingpost_propose to return a proposal id", a4.sent.slice(-1500));
+
+  const b4 = await session(
+    "bob",
+    dirBob,
+    [mcp("kingpost_proposal", { proposalId: p2 }), mcp("kingpost_reply", { proposalId: p2, text: "can you keep label optional?" }), say("Done.")],
+    "Read the proposal and ask for a tweak."
+  );
+  expect(b4.sent.includes(`Proposal for you: [${p2}]`), "expected bob, the owner, to be told about alice's proposal at session start", excerpt(b4.sent));
+  expect(b4.sent.includes("add a numeric id back") && b4.sent.includes("Replies:"), "expected kingpost_proposal to show the proposal's rationale and thread", toolResults(b4.sent));
+
+  const a5 = await session(
+    "alice",
+    dirAlice,
+    [mcp("kingpost_reply", { proposalId: p2, text: "yes, label stays optional" }), say("Done.")],
+    "Reply to bob about the proposal."
+  );
+  expect(
+    a5.sent.includes(`Reply on proposal [${p2}] (${NEW_CONTRACT}) from bob: can you keep label optional?`),
+    "expected alice to be told about bob's reply at session start",
+    excerpt(a5.sent)
+  );
+
+  const b5 = await session(
+    "bob",
+    dirBob,
+    [mcp("kingpost_reject", { proposalId: p2, reason: "superseded by a smaller change" }), say("Done.")],
+    "Reject the proposal."
+  );
+  expect(b5.sent.includes(`Reply on proposal [${p2}] (${NEW_CONTRACT}) from alice: yes, label stays optional`), "expected bob to be told about alice's reply at session start", excerpt(b5.sent));
+  const closed = (await api(project, "GET", `/proposals/${p2}`)).proposal;
+  expect(closed.status === "rejected" && closed.rejectionReason === "superseded by a smaller change", "expected kingpost_reject to close the proposal with its reason", JSON.stringify(closed));
+
+  const a6 = await session(
+    "alice",
+    dirAlice,
+    [mcp("kingpost_propose", { contractId: apiContract.id, newContent: P3_BODY, rationale: "smaller change" }), say("Done.")],
+    "Propose the smaller change."
+  );
+  expect(
+    a6.sent.includes(`Proposal rejected: [${p2}] change to ${NEW_CONTRACT} was turned down — superseded by a smaller change`),
+    "expected alice, the proposer, to be told her proposal was rejected, with the reason",
+    excerpt(a6.sent)
+  );
+  const p3 = proposalIdFrom(a6.sent);
+  expect(p3 && p3 !== p2, "expected alice's third kingpost_propose to return a new proposal id", a6.sent.slice(-1500));
+
+  const b6 = await session("bob", dirBob, [mcp("kingpost_accept", { proposalId: p3 }), say("Done.")], "Accept the proposal.");
+  expect(b6.sent.includes(`Proposal for you: [${p3}]`), "expected bob to be told about the smaller proposal at session start", excerpt(b6.sent));
+  const latest = await api(project, "GET", `/contracts/${apiContract.id}`);
+  expect(latest.contract.currentVersion === 4 && latest.versions[0].content === P3_BODY, "expected accepting the smaller proposal to publish it as v4", JSON.stringify(latest.versions[0]));
+
+  const a7 = await session("alice", dirAlice, [mcp("kingpost_brief", {}), say("Done.")], "Check the team brief.");
+  expect(
+    a7.sent.includes(`Proposal accepted: [${p3}] ${NEW_CONTRACT} is now v4`),
+    "expected alice, the proposer, to be told her proposal was accepted",
+    excerpt(a7.sent)
+  );
+
+  console.log(`PASS [team/${harness}, fake model]: status/claims, ask, finding, contract publish, brief injection, answer, delivery, claims in brief, propose, accept, transfer, non-breaking edit published, reply, reject, proposer notified`);
 } catch (e) {
   reportFailure(`team/${harness}`, e);
   process.exitCode = 1;
