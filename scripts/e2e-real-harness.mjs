@@ -12,8 +12,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { startFakeModel } from "./fake-model/server.mjs";
 import {
-  api, cliEntry, costSummary, deleteProject, fail, fakeMode, harnessCommand, loadProject, makeTempDir, prepareCodexHome,
-  reportFailure, runAsync, runSync, server, toolsUsed,
+  api, costSummary, deleteProject, fail, fakeMode, harnessCommand, loadProject, makeTempDir, prepareCodexHome,
+  reportFailure, runAsync, runKingpost, server, toolsUsed,
 } from "./e2e-lib.mjs";
 
 const harness = process.argv[2];
@@ -62,7 +62,7 @@ try {
   }
   if (harness === "codex") codexHome = prepareCodexHome([dir], fake?.url);
 
-  const init = runSync("node", [cliEntry, "init", "--name", `e2e-${harness}-${Date.now()}`, "--server-url", server], { cwd: dir });
+  const init = runKingpost(["init", "--name", `e2e-${harness}-${Date.now()}`, "--server-url", server], { cwd: dir });
   if (init.status !== 0) fail("kingpost init failed", init.stdout + init.stderr);
   project = loadProject(dir);
   const { contract } = await api(project, "PUT", "/contracts", { path: CONTRACT, content: ORIGINAL, updatedBy: "e2e", format: "json-schema" });

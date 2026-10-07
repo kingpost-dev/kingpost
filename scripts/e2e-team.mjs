@@ -32,8 +32,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { startFakeModel } from "./fake-model/server.mjs";
 import {
-  api, cliEntry, deleteProject, fail, fakeMode, harnessCommand, loadProject, makeTempDir, prepareCodexHome, reportFailure,
-  runAsync, runSync, server,
+  api, deleteProject, fail, fakeMode, harnessCommand, loadProject, makeTempDir, prepareCodexHome, reportFailure,
+  runAsync, runKingpost, server,
 } from "./e2e-lib.mjs";
 
 const harness = process.argv[2];
@@ -126,11 +126,11 @@ try {
   mkdirSync(join(dirAlice, "contracts"));
   if (harness === "codex") codexHome = prepareCodexHome([dirAlice, dirBob], fake.url);
 
-  const init = runSync("node", [cliEntry, "init", "--name", `e2e-team-${harness}-${Date.now()}`, "--server-url", server], { cwd: dirAlice });
+  const init = runKingpost(["init", "--name", `e2e-team-${harness}-${Date.now()}`, "--server-url", server], { cwd: dirAlice });
   if (init.status !== 0) fail("kingpost init failed", init.stdout + init.stderr);
   project = loadProject(dirAlice);
   const link = `${project.config.serverUrl}/join/${project.config.projectId}#${project.token}`;
-  const join_ = runSync("node", [cliEntry, "join", link, "--name", "bob"], { cwd: dirBob });
+  const join_ = runKingpost(["join", link, "--name", "bob"], { cwd: dirBob });
   if (join_.status !== 0) fail("kingpost join failed", join_.stdout + join_.stderr);
 
   // 1. alice

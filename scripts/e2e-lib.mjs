@@ -15,6 +15,9 @@ export const root = resolve(import.meta.dirname, "..");
 export const cliEntry = join(root, "packages/cli/dist/index.js");
 export const server = process.env.KINGPOST_E2E_SERVER ?? "https://app.kingpost.dev";
 export const fakeMode = process.env.KINGPOST_E2E_MODEL !== "real";
+// KINGPOST_E2E_CLI=installed drives the `kingpost` binary on PATH (what `npm i -g kingpost` gives a user), not the
+// repo's build: that's the only way to exercise the published package and its install paths.
+export const installedCli = process.env.KINGPOST_E2E_CLI === "installed";
 
 // Failures throw so each script's `finally` cleanup always runs (an exit would skip it and leak the
 // throwaway project); the script's catch reports and sets the exit code.
@@ -107,6 +110,9 @@ export async function deleteProject(label, project) {
     console.warn(`[${label}] couldn't delete the throwaway project: ${e instanceof Error ? e.message : e}`);
   }
 }
+
+/** Runs one `kingpost <args>` command (init, join, doctor, update...) the way the current mode says to. */
+export const runKingpost = (args, opts) => (installedCli ? runSync("kingpost", args, opts) : runSync("node", [cliEntry, ...args], opts));
 
 /** Reads the project a directory was init'd/joined into, plus its token from the credentials file. */
 export function loadProject(dir) {
