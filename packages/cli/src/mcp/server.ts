@@ -8,6 +8,10 @@ import { TEAMMATE_LABEL, renderDeltaLines } from "../delta-format.js";
 import { scanRepo } from "../scan/scan-repo.js";
 import { formatAgentLine, routeQuestionTarget } from "../ownership.js";
 
+// An agent asked for this and nothing is blocked on it (unlike a hook, which holds up a prompt), so wait out a slow
+// server instead of failing the tool call at the 1.5s hook-sized default.
+const MCP_API_TIMEOUT_MS = 10_000;
+
 function errorResult(message: string) {
   return { content: [{ type: "text" as const, text: `kingpost error: ${message}` }], isError: true };
 }
@@ -27,7 +31,7 @@ export function buildMcpServer(cwd: string) {
     if (!config?.agentId) throw new Error("no kingpost agent registered — run a session-start hook first, or 'kingpost init'/'join'");
     const token = getToken(config.projectId);
     if (!token) throw new Error("no kingpost credentials — run 'kingpost join <invite-link>'");
-    return { client: new ApiClient(config.serverUrl, config.projectId, token), agentId: config.agentId, config };
+    return { client: new ApiClient(config.serverUrl, config.projectId, token, MCP_API_TIMEOUT_MS), agentId: config.agentId, config };
   }
 
   server.tool(

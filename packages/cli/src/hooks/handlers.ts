@@ -110,13 +110,18 @@ interface AgentContext {
   config: ProjectConfig;
 }
 
+// The per-call limit for session and prompt hooks. hook.ts's HANDLER_TIMEOUT_MS (3000ms) is the real ceiling for the
+// whole hook, so keep this just under it; the old 1500ms default aborted calls on slow runners and networks that would
+// have finished inside the ceiling, silently dropping the brief or a status update.
+const HOOK_API_TIMEOUT_MS = 2800;
+
 async function ensureAgent(cwd: string, harness: Harness): Promise<AgentContext | null> {
   const config = readProjectConfig(cwd);
   if (!config) return null;
   const token = getToken(config.projectId);
   if (!token) return null;
 
-  const client = new ApiClient(config.serverUrl, config.projectId, token);
+  const client = new ApiClient(config.serverUrl, config.projectId, token, HOOK_API_TIMEOUT_MS);
   if (config.agentId) return { client, agentId: config.agentId, config };
 
   const userName = process.env.KINGPOST_AGENT ?? process.env.USER ?? hostname();
