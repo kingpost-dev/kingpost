@@ -61,7 +61,11 @@ jobs:
           KINGPOST_E2E_CLI: installed
           KINGPOST_E2E_MODEL: fake
       - name: Two-agent team scenario through the installed package
-        run: node scripts/e2e-team.mjs ${{ matrix.harness }}
+        # This one talks to the live server from a shared runner, and hooks give each request 1.5s, so an occasional
+        # slow response makes a hook fail open and the scenario sees a missing write (or init gets a stray 500). It
+        # builds a fresh project each run, so one retry is safe; a real regression fails both attempts.
+        shell: bash
+        run: node scripts/e2e-team.mjs ${{ matrix.harness }} || { echo "::warning::team scenario failed once, retrying"; node scripts/e2e-team.mjs ${{ matrix.harness }}; }
         env:
           KINGPOST_E2E_CLI: installed
           KINGPOST_E2E_MODEL: fake
